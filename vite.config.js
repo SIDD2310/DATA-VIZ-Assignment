@@ -11,7 +11,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 export default defineConfig(({ mode }) => {
   // This repo is a single Vite app (not a monorepo). Read secrets from repo root.
   const envDir = __dirname;
-  const env = loadEnv(mode, envDir, '');
+  loadEnv(mode, envDir, '');
 
   // GitHub project Pages serves the site at /<repo-name>/; set CI_PAGES_BASE in CI (see deploy workflow).
   const base = process.env.CI_PAGES_BASE?.replace(/\/?$/, '/') || '/';

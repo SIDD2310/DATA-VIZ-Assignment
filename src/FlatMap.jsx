@@ -197,7 +197,7 @@ export default React.memo(function FlatMap({
 
 
   const terminatorPath = useMemo(() => {
-    const date = new Date(temporalCutoff || Date.now());
+    const date = new Date(temporalCutoff);
     const d = Math.floor((date - new Date(date.getFullYear(), 0, 0)) / 1000 / 60 / 60 / 24);
     const dec = 23.45 * Math.sin((360 / 365) * (d - 81) * (Math.PI / 180));
     const decRad = (dec * Math.PI) / 180;

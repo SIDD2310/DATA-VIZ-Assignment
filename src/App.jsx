@@ -530,30 +530,30 @@ const HorizontalReel = () => {
 
 
 // --- Boot Sequence ---
+const BOOT_MESSAGES = [
+  { text: 'Initializing WebGL2 map engine (Deck.GL)...', delay: 0 },
+  { text: 'Connecting to USGS & FIRMS telemetry...', delay: 250 },
+  { text: 'Bootstrapping Market, Crypto & FX gateways...', delay: 500 },
+  { text: 'Syncing Maritime AIS & ADS-B Aviation...', delay: 750 },
+  { text: 'Parsing ACLED/UCDP conflict datasets...', delay: 1000 },
+  { text: 'Hydrating 30+ data streams across 195 countries...', delay: 1250 },
+  { text: 'Building Country Instability Index...', delay: 1550 },
+  { text: 'Correlating Signals across 11 intelligence domains...', delay: 1850 },
+  { text: 'Rendering panel grid (86 modules initialized)...', delay: 2200 },
+  { text: 'Vercel Edge API connections verified.', delay: 2500 },
+  { text: 'Boot complete. Entering intelligence nexus.', delay: 2900 },
+];
+
 const BootSequence = ({ onComplete }) => {
   const [logs, setLogs] = useState([]);
   const [progress, setProgress] = useState(0);
   const containerRef = useRef(null);
 
-  const bootMessages = [
-    { text: 'Initializing WebGL2 map engine (Deck.GL)...', delay: 0 },
-    { text: 'Connecting to USGS & FIRMS telemetry...', delay: 250 },
-    { text: 'Bootstrapping Market, Crypto & FX gateways...', delay: 500 },
-    { text: 'Syncing Maritime AIS & ADS-B Aviation...', delay: 750 },
-    { text: 'Parsing ACLED/UCDP conflict datasets...', delay: 1000 },
-    { text: 'Hydrating 30+ data streams across 195 countries...', delay: 1250 },
-    { text: 'Building Country Instability Index...', delay: 1550 },
-    { text: 'Correlating Signals across 11 intelligence domains...', delay: 1850 },
-    { text: 'Rendering panel grid (86 modules initialized)...', delay: 2200 },
-    { text: 'Vercel Edge API connections verified.', delay: 2500 },
-    { text: 'Boot complete. Entering intelligence nexus.', delay: 2900 },
-  ];
-
   useEffect(() => {
-    const timers = bootMessages.map((msg, i) =>
+    const timers = BOOT_MESSAGES.map((msg, i) =>
       setTimeout(() => {
         setLogs(prev => [...prev, msg.text]);
-        setProgress(((i + 1) / bootMessages.length) * 100);
+        setProgress(((i + 1) / BOOT_MESSAGES.length) * 100);
       }, msg.delay)
     );
 
@@ -569,7 +569,7 @@ const BootSequence = ({ onComplete }) => {
       timers.forEach(clearTimeout);
       clearTimeout(finishTimer);
     };
-  }, []);
+  }, [onComplete]);
 
   return (
     <div ref={containerRef} className="fixed inset-0 z-50 bg-[#0a0f1a] flex items-center justify-center">

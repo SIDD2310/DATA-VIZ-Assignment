@@ -227,28 +227,46 @@ const GlobalTooltip = ({ children, text, position = 'top', disabled = false, wra
   const [coords, setCoords] = useState({ top: 0, left: 0 });
   const triggerRef = useRef(null);
 
-  useEffect(() => {
-    if (visible && triggerRef.current) {
-      const rect = triggerRef.current.getBoundingClientRect();
-      let top = 0;
-      let left = 0;
-      
-      if (position === 'right') {
-        top = rect.top + rect.height / 2;
-        left = rect.right + 12;
-      } else if (position === 'left') {
-        top = rect.top + rect.height / 2;
-        left = rect.left - 12;
-      } else if (position === 'bottom') {
-        top = rect.bottom + 12;
-        left = rect.left + rect.width / 2;
-      } else {
-        top = rect.top - 12;
-        left = rect.left + rect.width / 2;
-      }
-      setCoords({ top, left });
+  const updateCoords = useCallback(() => {
+    if (!triggerRef.current) return;
+    const rect = triggerRef.current.getBoundingClientRect();
+    let top = 0;
+    let left = 0;
+
+    if (position === 'right') {
+      top = rect.top + rect.height / 2;
+      left = rect.right + 12;
+    } else if (position === 'left') {
+      top = rect.top + rect.height / 2;
+      left = rect.left - 12;
+    } else if (position === 'bottom') {
+      top = rect.bottom + 12;
+      left = rect.left + rect.width / 2;
+    } else {
+      top = rect.top - 12;
+      left = rect.left + rect.width / 2;
     }
-  }, [visible, position]);
+
+    setCoords({ top, left });
+  }, [position]);
+
+  useEffect(() => {
+    if (!visible) return;
+
+    let raf = 0;
+    const onScrollOrResize = () => {
+      cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(updateCoords);
+    };
+
+    window.addEventListener('scroll', onScrollOrResize, true);
+    window.addEventListener('resize', onScrollOrResize);
+    return () => {
+      cancelAnimationFrame(raf);
+      window.removeEventListener('scroll', onScrollOrResize, true);
+      window.removeEventListener('resize', onScrollOrResize);
+    };
+  }, [visible, updateCoords]);
 
   if (disabled || !text) return children;
 
@@ -256,7 +274,10 @@ const GlobalTooltip = ({ children, text, position = 'top', disabled = false, wra
     <div 
       className={wrapperClass} 
       ref={triggerRef}
-      onMouseEnter={() => setVisible(true)} 
+      onMouseEnter={() => {
+        updateCoords();
+        setVisible(true);
+      }} 
       onMouseLeave={() => setVisible(false)}
     >
       {children}
@@ -388,11 +409,9 @@ export default function Dashboard({ onBack }) {
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState({ quakes: [], fires: [], markets: null, aviation: [], multiMarket: [], marketCandles: {} });
-  const [timeframe, setTimeframe] = useState('week');
   const [temporalHours, setTemporalHours] = useState(168);
   const [isTemporalPlaying, setIsTemporalPlaying] = useState(false);
   const [selectedMarketSymbol, setSelectedMarketSymbol] = useState('SPY');
-  const [isFetchingCandles, setIsFetchingCandles] = useState(false);
   const [focusedEvent, setFocusedEvent] = useState(null);
   const [mapMode, setMapMode] = useState('globe');
   const [layers, setLayers] = useState({
@@ -698,7 +717,10 @@ export default function Dashboard({ onBack }) {
   const filteredQuakes = useMemo(() => data.quakes.filter(q => (q.time || 0) >= temporalCutoff), [data.quakes, temporalCutoff]);
   const filteredFires = useMemo(() => data.fires.filter(f => (f.time || 0) >= temporalCutoff), [data.fires, temporalCutoff]);
   
-  const currentCandles = data.marketCandles[selectedMarketSymbol] || [];
+  const currentCandles = useMemo(
+    () => data.marketCandles[selectedMarketSymbol] || [],
+    [data.marketCandles, selectedMarketSymbol],
+  );
   const filteredCandles = useMemo(() => {
     const rawFiltered = currentCandles.filter(c => c.time >= temporalCutoff);
     if (rawFiltered.length === 0 && currentCandles.length > 0) {
@@ -1666,10 +1688,6 @@ export default function Dashboard({ onBack }) {
               const rangeRows = sectorBars.slice(0, 8).filter((m) => m.low != null && m.high != null && m.price != null);
               const candleMin = filteredCandles.length ? Math.min(...filteredCandles.map(c => c.low)) : 0;
               const candleMax = filteredCandles.length ? Math.max(...filteredCandles.map(c => c.high)) : 1;
-              const candleStart = filteredCandles[0]?.open;
-              const candleEnd = filteredCandles[filteredCandles.length - 1]?.close;
-              const candleDelta = candleStart ? (((candleEnd - candleStart) / candleStart) * 100) : 0;
-              const candleUp = candleDelta >= 0;
               return (
               <div className="p-6 max-w-[1600px] mx-auto animate-fadeIn overflow-y-auto custom-scrollbar" style={{maxHeight:'calc(100vh - 100px)'}}>
                 <PageHeader
