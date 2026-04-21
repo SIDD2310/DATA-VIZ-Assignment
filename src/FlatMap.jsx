@@ -40,17 +40,7 @@ function geoToSvgPath(coords, W, H) {
     .join(' ');
 }
 
-function aircraftPath(aircraft, W, H) {
-  const pts = Array.isArray(aircraft) ? aircraft : [];
-  let d = '';
-  for (const a of pts) {
-    if (!a?.id || typeof a.lat !== 'number' || typeof a.lng !== 'number') continue;
-    const { x, y } = projectMercator(a.lat, a.lng, W, H);
-    const r = a.onGround ? 1.6 : 1.8;
-    d += `M${(x - r).toFixed(1)},${y.toFixed(1)}a${r},${r} 0 1,0 ${(r * 2).toFixed(1)},0a${r},${r} 0 1,0 -${(r * 2).toFixed(1)},0`;
-  }
-  return d;
-}
+
 
 export default React.memo(function FlatMap({
   geoData,
@@ -64,9 +54,8 @@ export default React.memo(function FlatMap({
   maxCountryScore,
   layers,
   hubs,
-  aircraft,
   onCountryClick,
-  onAircraftClick,
+  temporalCutoff,
 }) {
   const W = 960;
   const H = 500;
@@ -205,46 +194,41 @@ export default React.memo(function FlatMap({
       .join('');
   }, [weatherAlerts, layers?.weatherAlerts]);
 
-  const aircraftPts = useMemo(() => {
-    if (!layers?.aircraft) return '';
-    return aircraftPath(aircraft, W, H);
-  }, [aircraft, layers?.aircraft]);
 
-  const utcHours = new Date().getUTCHours() + new Date().getUTCMinutes() / 60;
-  const subsolarLng = 180 - utcHours * 15;
-  const dayCenterX = ((subsolarLng + 180) / 360) * W;
-  const dayHalfWidth = W * 0.28;
-  const nightLeftW = Math.max(0, dayCenterX - dayHalfWidth);
-  const nightRightX = dayCenterX + dayHalfWidth;
-  const nightRightW = Math.max(0, W - nightRightX);
 
-  const handleSvgClick = useCallback(
-    (e) => {
-      if (!layers?.aircraft || !onAircraftClick || !svgRef.current) return;
-      // Cheap "pick": choose nearest aircraft within a small pixel radius.
-      const rect = svgRef.current.getBoundingClientRect();
-      const mx = ((e.clientX - rect.left) / rect.width) * viewBox.w + viewBox.x;
-      const my = ((e.clientY - rect.top) / rect.height) * viewBox.h + viewBox.y;
+  const terminatorPath = useMemo(() => {
+    const date = new Date(temporalCutoff || Date.now());
+    const d = Math.floor((date - new Date(date.getFullYear(), 0, 0)) / 1000 / 60 / 60 / 24);
+    const dec = 23.45 * Math.sin((360 / 365) * (d - 81) * (Math.PI / 180));
+    const decRad = (dec * Math.PI) / 180;
+    const hours = date.getUTCHours() + date.getUTCMinutes() / 60 + date.getUTCSeconds() / 3600;
+    const sunLng = (12 - hours) * 15;
+    const sunLngRad = (sunLng * Math.PI) / 180;
 
-      let best = null;
-      let bestD2 = Infinity;
-      const maxD = 7 * (viewBox.w / rect.width);
-      const maxD2 = maxD * maxD;
-      for (const a of aircraft || []) {
-        if (!a?.id || typeof a.lat !== 'number' || typeof a.lng !== 'number') continue;
-        const p = projectMercator(a.lat, a.lng, W, H);
-        const dx = p.x - mx;
-        const dy = p.y - my;
-        const d2 = dx * dx + dy * dy;
-        if (d2 < bestD2 && d2 <= maxD2) {
-          bestD2 = d2;
-          best = a;
-        }
+    const points = [];
+    for (let lng = 180; lng >= -180; lng -= 2) {
+      const lngRad = (lng * Math.PI) / 180;
+      const tanDec = Math.tan(decRad);
+      let latRad = 0;
+      if (tanDec !== 0) {
+        latRad = Math.atan(-Math.cos(lngRad - sunLngRad) / tanDec);
       }
-      if (best) onAircraftClick(best);
-    },
-    [aircraft, layers?.aircraft, onAircraftClick, viewBox],
-  );
+      points.push([lng, (latRad * 180) / Math.PI]);
+    }
+
+    if (dec >= 0) {
+      points.push([-180, -90], [180, -90]);
+    } else {
+      points.push([-180, 90], [180, 90]);
+    }
+
+    const projected = points.map(([lng, lat]) => {
+      const { x, y } = projectMercator(lat, lng, W, H);
+      return `${x.toFixed(1)},${y.toFixed(1)}`;
+    });
+
+    return `M${projected.join('L')}Z`;
+  }, [temporalCutoff]);
 
   return (
     <div className="w-full h-full relative">
@@ -257,7 +241,6 @@ export default React.memo(function FlatMap({
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
         onMouseLeave={handleMouseUp}
-        onClick={handleSvgClick}
       >
         <defs>
           <linearGradient id="nightFadeL" x1="0" x2="1" y1="0" y2="0">
@@ -352,19 +335,11 @@ export default React.memo(function FlatMap({
         {chokepointPts ? <path d={chokepointPts} fill="#F59E0B" opacity={0.8} style={{ pointerEvents: 'none' }} /> : null}
         {climatePts ? <path d={climatePts} fill={THEME.green} opacity={0.8} style={{ pointerEvents: 'none' }} /> : null}
         {weatherAlertPts ? <path d={weatherAlertPts} fill="#FACC15" opacity={0.88} style={{ pointerEvents: 'none' }} /> : null}
-        {aircraftPts ? <path d={aircraftPts} fill={THEME.flight} opacity={0.9} style={{ pointerEvents: 'none' }} /> : null}
 
-        {nightLeftW > 0 ? <rect x={0} y={0} width={nightLeftW} height={H} fill="url(#nightFadeL)" style={{ pointerEvents: 'none' }} /> : null}
-        {nightRightW > 0 ? (
-          <rect x={nightRightX} y={0} width={nightRightW} height={H} fill="url(#nightFadeR)" style={{ pointerEvents: 'none' }} />
-        ) : null}
-        <rect
-          x={Math.max(0, dayCenterX - dayHalfWidth)}
-          y={0}
-          width={Math.min(W, dayHalfWidth * 2)}
-          height={H}
-          fill="rgba(255,240,200,0.05)"
-          style={{ pointerEvents: 'none' }}
+        <path 
+          d={terminatorPath} 
+          fill="rgba(4,6,10,0.65)" 
+          style={{ mixBlendMode: 'multiply', pointerEvents: 'none' }} 
         />
 
         {layers?.flights &&

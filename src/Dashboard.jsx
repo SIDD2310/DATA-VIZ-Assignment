@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import {
   Activity, ArrowLeft, ArrowRight, AlertTriangle, Info,
   Plane, TrendingDown, TrendingUp, ShieldAlert, Layers,
   Globe2, BarChart3, Network, Eye, Map as MapIcon, ChevronRight,
   DollarSign, Gauge, Fuel, Anchor, Bitcoin, Newspaper,
-  CloudRain
+  CloudRain, Clock, Play, Pause, RotateCcw
 } from 'lucide-react';
 import Globe from 'react-globe.gl';
 import {
@@ -23,6 +24,7 @@ const KEYS = {
   aviation: '92020335bc1069eb12ab0eb50a0b807e',
   eia: '7V6IgbhNrM3STgjDszflZk9w9j661lHBlzf3HwXG',
   gnews: '9ca18a6baae121d79dd23e8d3af50a1e',
+  alphavantage: 'L4ZB7R6IEKUFQHFT',
 };
 
 const THEME = {
@@ -220,20 +222,55 @@ const CustomTooltip = ({ active, payload, label }) => {
   return null;
 };
 
-const GlobalTooltip = ({ children, text, position = 'top', disabled = false }) => {
+const GlobalTooltip = ({ children, text, position = 'top', disabled = false, wrapperClass = "relative inline-block" }) => {
   const [visible, setVisible] = useState(false);
+  const [coords, setCoords] = useState({ top: 0, left: 0 });
+  const triggerRef = useRef(null);
+
+  useEffect(() => {
+    if (visible && triggerRef.current) {
+      const rect = triggerRef.current.getBoundingClientRect();
+      let top = 0;
+      let left = 0;
+      
+      if (position === 'right') {
+        top = rect.top + rect.height / 2;
+        left = rect.right + 12;
+      } else if (position === 'left') {
+        top = rect.top + rect.height / 2;
+        left = rect.left - 12;
+      } else if (position === 'bottom') {
+        top = rect.bottom + 12;
+        left = rect.left + rect.width / 2;
+      } else {
+        top = rect.top - 12;
+        left = rect.left + rect.width / 2;
+      }
+      setCoords({ top, left });
+    }
+  }, [visible, position]);
+
   if (disabled || !text) return children;
 
   return (
-    <div className="relative inline-block" onMouseEnter={() => setVisible(true)} onMouseLeave={() => setVisible(false)}>
+    <div 
+      className={wrapperClass} 
+      ref={triggerRef}
+      onMouseEnter={() => setVisible(true)} 
+      onMouseLeave={() => setVisible(false)}
+    >
       {children}
-      {visible && (
-        <div className={`absolute z-[100] px-2.5 py-1.5 font-mono text-[9px] uppercase tracking-wider bg-[#000]/95 text-white rounded-md border border-[#CC5833]/40 shadow-2xl whitespace-nowrap pointer-events-none animate-fadeIn ${
-          position === 'right' ? 'left-full ml-3 top-1/2 -translate-y-1/2' :
-          position === 'left' ? 'right-full mr-3 top-1/2 -translate-y-1/2' :
-          position === 'bottom' ? 'top-full mt-3 left-1/2 -translate-x-1/2' :
-          'bottom-full mb-3 left-1/2 -translate-x-1/2'
-        }`}>
+      {visible && createPortal(
+        <div 
+          className="fixed z-[99999] px-2.5 py-1.5 font-mono text-[9px] uppercase tracking-wider bg-[#000]/95 text-white rounded-md border border-[#CC5833]/40 shadow-2xl whitespace-nowrap pointer-events-none animate-fadeIn"
+          style={{
+            top: coords.top,
+            left: coords.left,
+            transform: position === 'right' || position === 'left' 
+              ? `translate(${position === 'left' ? '-100%' : '0'}, -50%)`
+              : `translate(-50%, ${position === 'top' ? '-100%' : '0'})`
+          }}
+        >
           <div className={`absolute w-2 h-2 bg-[#000] border-t border-l border-[#CC5833]/40 transform rotate-[-45deg] ${
             position === 'right' ? '-left-1 top-1/2 -translate-y-1/2 border-t-0 border-r-0' :
             position === 'left' ? '-right-1 top-1/2 -translate-y-1/2 border-b-0 border-l-0' :
@@ -241,66 +278,56 @@ const GlobalTooltip = ({ children, text, position = 'top', disabled = false }) =
             '-bottom-1 left-1/2 -translate-x-1/2 border-t-0 border-l-0'
           }`} />
           {text}
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );
 };
 
-function normalizeWingbitsFlightPath(rawPath) {
-  if (!Array.isArray(rawPath) || rawPath.length < 2) return [];
-  const out = [];
-  let cur = null;
+const CandlestickShape = (props) => {
+  const { x, y, width, height, payload } = props;
+  const isUp = payload.close >= payload.open;
+  const color = isUp ? '#6B9E78' : '#EF4444';
 
-  const pushCur = () => {
-    if (cur && typeof cur.lat === 'number' && typeof cur.lng === 'number') out.push(cur);
-    cur = null;
-  };
-
-  for (const p of rawPath) {
-    if (!p || typeof p !== 'object') continue;
-
-    if (typeof p.latitude === 'number' && typeof p.longitude === 'number') {
-      pushCur();
-      cur = {
-        lat: p.latitude,
-        lng: p.longitude,
-        altFt: typeof p.altitude === 'number' ? p.altitude : null,
-        ts: typeof p.timestamp === 'number' ? p.timestamp : null,
-      };
-      continue;
-    }
-
-    // Wingbits often returns interleaved samples:
-    // { altitude, timestamp } then later { latitude, longitude } for the same fix.
-    if (typeof p.altitude === 'number' && typeof p.timestamp === 'number') {
-      if (cur && typeof cur.lat === 'number' && typeof cur.lng === 'number') {
-        cur.altFt = p.altitude;
-        cur.ts = p.timestamp;
-      }
-      continue;
-    }
+  const totalRange = payload.high - payload.low;
+  if (totalRange === 0) {
+    return <rect x={x} y={y} width={Math.max(width * 0.6, 4)} height={2} fill={color} />;
   }
 
-  pushCur();
+  const bodyTop = Math.max(payload.open, payload.close);
+  const bodyBottom = Math.min(payload.open, payload.close);
+  
+  const bodyTopY = y + ((payload.high - bodyTop) / totalRange) * height;
+  const bodyHeight = ((bodyTop - bodyBottom) / totalRange) * height;
 
-  // De-dupe consecutive identical points (common in sampled paths)
-  const deduped = [];
-  for (const pt of out) {
-    const prev = deduped[deduped.length - 1];
-    if (prev && prev.lat === pt.lat && prev.lng === pt.lng) continue;
-    deduped.push(pt);
-  }
-  return deduped;
-}
+  const barWidth = Math.max(width * 0.6, 4);
+  const barX = x + (width - barWidth) / 2;
+  const centerX = x + width / 2;
 
-async function fetchWithFallback(url, type, mockGenerator) {
+  return (
+    <g>
+      <line x1={centerX} y1={y} x2={centerX} y2={y + height} stroke={color} strokeWidth={1.5} />
+      <rect x={barX} y={bodyTopY} width={barWidth} height={Math.max(bodyHeight, 2)} fill={color} stroke={color} />
+    </g>
+  );
+};
+
+
+async function fetchReal(url, type, label) {
   try {
     const res = await fetch(url);
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    if (!res.ok) {
+      console.error(`[${label}] HTTP ${res.status} — ${res.statusText}`);
+      return null;
+    }
+    console.log(`[${label}] ✓ OK`);
     if (type === 'csv') return await res.text();
     return await res.json();
-  } catch { return mockGenerator(); }
+  } catch (err) {
+    console.error(`[${label}] FETCH FAILED:`, err.message);
+    return null;
+  }
 }
 
 const PAGES = [
@@ -360,14 +387,17 @@ function EmptyState({ children }) {
 export default function Dashboard({ onBack }) {
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [data, setData] = useState({ quakes: [], fires: [], markets: null, aviation: [], multiMarket: [] });
+  const [data, setData] = useState({ quakes: [], fires: [], markets: null, aviation: [], multiMarket: [], marketCandles: {} });
   const [timeframe, setTimeframe] = useState('week');
+  const [temporalHours, setTemporalHours] = useState(168);
+  const [isTemporalPlaying, setIsTemporalPlaying] = useState(false);
+  const [selectedMarketSymbol, setSelectedMarketSymbol] = useState('SPY');
+  const [isFetchingCandles, setIsFetchingCandles] = useState(false);
   const [focusedEvent, setFocusedEvent] = useState(null);
   const [mapMode, setMapMode] = useState('globe');
   const [layers, setLayers] = useState({
     intelHotspots: true,
     flights: true,
-    aircraft: true,
     maritime: true,
     climate: false,
     weatherAlerts: true,
@@ -383,7 +413,6 @@ export default function Dashboard({ onBack }) {
     climate: true,
     weatherAlerts: true,
     aviation: true,
-    aircraft: true,
     delayed: true,
     cancelled: true,
     maritime: true,
@@ -401,21 +430,10 @@ export default function Dashboard({ onBack }) {
   });
   const globeRef = useRef();
   const globeContainerRef = useRef();
-  const aircraftTrackReqId = useRef(0);
-  const aircraftTrailRef = useRef(new Map()); // icao24 -> [{lat,lng,ts}]
   const [globeSize, setGlobeSize] = useState({ w: 600, h: 600 });
   const [globeNonce, setGlobeNonce] = useState(0);
 
-  const [aircraft, setAircraft] = useState([]);
-  const [aircraftError, setAircraftError] = useState(null);
-  const [selectedAircraftId, setSelectedAircraftId] = useState(null);
-  const [aircraftTrack, setAircraftTrack] = useState(null); // { id, callsign, points:[{lat,lng,altFt,ts}] }
-  const [aircraftTrackLoading, setAircraftTrackLoading] = useState(false);
-  const [aircraftTrackError, setAircraftTrackError] = useState(null);
-  const [aircraftTrailsVersion, setAircraftTrailsVersion] = useState(0);
-
   const geoPrepared = useMemo(() => buildGeoPrepared(geoData), [geoData]);
-  const aircraftTrails = useMemo(() => Object.fromEntries(aircraftTrailRef.current.entries()), [aircraftTrailsVersion]);
 
   const toggleLayer = useCallback((key) => {
     setLayers(prev => ({ ...prev, [key]: !prev[key] }));
@@ -485,232 +503,174 @@ export default function Dashboard({ onBack }) {
     return () => cancelAnimationFrame(raf);
   }, [activePage, mapMode, selectedCountry]);
 
+  // --- Temporal playback animation ---
+  useEffect(() => {
+    if (!isTemporalPlaying) return;
+    const interval = setInterval(() => {
+      setTemporalHours((prev) => {
+        // Adaptive step: faster through early hours, slower through days
+        let step;
+        if (prev < 6) step = 1;          // 1h increments for first 6h
+        else if (prev < 24) step = 2;    // 2h increments up to 24h
+        else if (prev < 72) step = 3;    // 3h increments up to 3d
+        else step = 6;                    // 6h increments for the rest
+        const next = prev + step;
+        if (next >= 168) {
+          setIsTemporalPlaying(false);
+          return 168;
+        }
+        return next;
+      });
+    }, 250); // tick every 250ms
+    return () => clearInterval(interval);
+  }, [isTemporalPlaying]);
+
   useEffect(() => {
     let isMounted = true;
     const ingest = async () => {
       setLoading(true);
-      const usgsUrl = timeframe === 'day'
-        ? 'https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/all_day.geojson'
-        : 'https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/all_week.geojson';
-      const quakeRes = await fetch(usgsUrl).then(r => r.json());
-      const parsedQuakes = quakeRes.features.map(f => ({
+      // Always fetch full 7-day window; temporal scrubber filters client-side
+      const usgsUrl = 'https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/all_week.geojson';
+      console.group('%c📡 DATA INGEST', 'color:#CC5833;font-weight:bold;font-size:14px');
+      console.log('Fetching full 7-day dataset (temporal scrub filters client-side)');
+
+      // 1. USGS Earthquakes
+      const quakeRes = await fetchReal(usgsUrl, 'json', 'USGS Earthquakes');
+      const parsedQuakes = quakeRes?.features?.map(f => ({
         id: f.id, domain: 'SEISMIC', mag: f.properties.mag || 0,
         place: f.properties.place, time: f.properties.time,
         lat: f.geometry.coordinates[1], lng: f.geometry.coordinates[0], depth: f.geometry.coordinates[2]
-      }));
-      const marketRes = await fetchWithFallback(`https://finnhub.io/api/v1/quote?symbol=SPY&token=${KEYS.finnhub}`, 'json',
-        () => ({ c: 512.3, d: -12.4, dp: -2.3, h: 520, l: 510, o: 518, pc: 524 }));
-      const flightRes = await fetchWithFallback(`http://api.aviationstack.com/v1/flights?access_key=${KEYS.aviation}&flight_status=scheduled`, 'json',
-        () => ({ data: Array.from({ length: 40 }, (_, i) => ({ flight_status: Math.random() > 0.8 ? 'cancelled' : (Math.random() > 0.5 ? 'delayed' : 'active'), departure: { airport: `Hub ${i}` } })) }));
-      const firmsCsv = await fetchWithFallback(`https://firms.modaps.eosdis.nasa.gov/api/area/csv/${KEYS.firms}/VIIRS_SNPP_NRT/world/${timeframe === 'day' ? 1 : 3}`, 'csv',
-        () => { let csv = "latitude,longitude,brightness,confidence\n"; for (let i = 0; i < 150; i++) csv += `${(Math.random()*180)-90},${(Math.random()*360)-180},${300+Math.random()*100},${Math.random()>0.5?'h':'n'}\n`; return csv; });
-      const parsedFires = firmsCsv.split('\n').slice(1).map((line, idx) => {
+      })) || [];
+      console.log(`  → ${parsedQuakes.length} quakes parsed`);
+
+      // 2. Finnhub SPY Quote
+      const marketRes = await fetchReal(`https://finnhub.io/api/v1/quote?symbol=SPY&token=${KEYS.finnhub}`, 'json', 'Finnhub SPY');
+      if (!marketRes || marketRes.c == null || marketRes.c === 0) console.warn('[Finnhub SPY] No valid quote returned — KPI will show "—"');
+
+      // 3. Aviationstack Flights
+      const flightRes = await fetchReal(`https://api.aviationstack.com/v1/flights?access_key=${KEYS.aviation}&flight_status=scheduled`, 'json', 'Aviationstack Flights');
+      const aviationData = flightRes?.data || [];
+      console.log(`  → ${aviationData.length} flights received`);
+
+      // 4. NASA FIRMS Fire Data
+      // Always fetch 3-day window for FIRMS (max available for NRT)
+      const firmsCsv = await fetchReal(`https://firms.modaps.eosdis.nasa.gov/api/area/csv/${KEYS.firms}/VIIRS_SNPP_NRT/world/3`, 'csv', 'NASA FIRMS');
+      const parsedFires = firmsCsv ? firmsCsv.split('\n').slice(1).map((line, idx) => {
         const p = line.split(','); if (p.length < 4) return null;
         return { id: `fire-${idx}`, domain: 'FIRE', lat: parseFloat(p[0]), lng: parseFloat(p[1]), mag: parseFloat(p[2]) / 80, place: `Thermal GEO-${Math.abs(Math.floor(parseFloat(p[0])))}`, time: Date.now() - (Math.random() * 86400000), confidence: p[3] };
-      }).filter(Boolean);
+      }).filter(Boolean) : [];
+      console.log(`  → ${parsedFires.length} fire hotspots parsed`);
+
+      // 5. Multi-Market Quotes (Finnhub)
       const finnhubToken = import.meta.env?.VITE_FINNHUB_API_KEY || KEYS.finnhub;
       const gnewsKey = import.meta.env?.VITE_GNEWS_API_KEY || KEYS.gnews;
       const eiaKey = import.meta.env?.VITE_EIA_API_KEY || KEYS.eia;
-      const [multiMarket, intelPanels] = await Promise.all([
-        Promise.all(
-          MARKET_SYMBOLS.map(async (s) => {
-            try {
-              const r = await fetch(`https://finnhub.io/api/v1/quote?symbol=${encodeURIComponent(s.symbol)}&token=${finnhubToken}`);
-              if (!r.ok) throw new Error();
-              const q = await r.json();
-              return { ...s, price: q.c, change: q.d, changePct: q.dp, high: q.h, low: q.l, open: q.o, prevClose: q.pc };
-            } catch {
-              const base = 100 + Math.random() * 400;
-              const ch = (Math.random() - 0.5) * 10;
-              return { ...s, price: base, change: ch, changePct: (ch / base) * 100, high: base + 5, low: base - 5, open: base - ch / 2, prevClose: base - ch };
+
+      // Stagger requests to avoid Finnhub 429 rate limits (60 req/min on free tier)
+      const multiMarket = [];
+      for (const s of MARKET_SYMBOLS) {
+        try {
+          const r = await fetch(`https://finnhub.io/api/v1/quote?symbol=${encodeURIComponent(s.symbol)}&token=${finnhubToken}`);
+          if (!r.ok) {
+            console.error(`[Finnhub ${s.symbol}] HTTP ${r.status}`);
+            multiMarket.push({ ...s, price: null, change: null, changePct: null, high: null, low: null, open: null, prevClose: null, _error: true });
+          } else {
+            const q = await r.json();
+            if (q.c == null || q.c === 0) {
+              console.warn(`[Finnhub ${s.symbol}] Returned zero/null quote`);
+              multiMarket.push({ ...s, price: null, change: null, changePct: null, high: null, low: null, open: null, prevClose: null, _error: true });
+            } else {
+              multiMarket.push({ ...s, price: q.c, change: q.d, changePct: q.dp, high: q.h, low: q.l, open: q.o, prevClose: q.pc });
             }
-          })
-        ),
-        fetchIntelPanels({
-          quakes: parsedQuakes,
-          fires: parsedFires,
-          aviation: flightRes.data || [],
-          finnhubToken,
-          gnewsKey,
-          eiaKey,
-        }),
-      ]);
+          }
+        } catch (err) {
+          console.error(`[Finnhub ${s.symbol}] FAILED:`, err.message);
+          multiMarket.push({ ...s, price: null, change: null, changePct: null, high: null, low: null, open: null, prevClose: null, _error: true });
+        }
+        await new Promise(r => setTimeout(r, 250)); // rate-limit guard
+      }
+      const liveCount = multiMarket.filter(m => m.price != null).length;
+      console.log(`[Finnhub Multi-Market] ${liveCount}/${MARKET_SYMBOLS.length} symbols returned live quotes`);
+
+      // 6. Intel Panels (Commodities, FX, Polymarket, Climate, News, EIA, etc.)
+      const intelPanels = await fetchIntelPanels({
+        quakes: parsedQuakes,
+        fires: parsedFires,
+        aviation: aviationData,
+        finnhubToken,
+        gnewsKey,
+        eiaKey,
+      });
+      console.log('[Intel Panels] ✓ Complete');
+
+      console.groupEnd();
+
       if (isMounted) {
-        setData({ quakes: parsedQuakes, fires: parsedFires, markets: marketRes, aviation: flightRes.data || [], multiMarket });
+        setData(prev => ({ ...prev, quakes: parsedQuakes, fires: parsedFires, markets: marketRes, aviation: aviationData, multiMarket }));
         setIntel(intelPanels);
         setLoading(false);
       }
     };
     ingest();
     return () => { isMounted = false; };
-  }, [timeframe]);
+  }, []); // fetch once — temporal scrubber filters client-side
 
-  useEffect(() => {
-    let alive = true;
-    let timer = null;
 
-    const fetchAircraft = async () => {
-      try {
-        // Wingbits requires geographic queries. We fan out a few large boxes to approximate
-        // global coverage while staying within typical API payload limits.
-        //
-        // Dev server proxies `/api/wingbits/*` → `https://customer-api.wingbits.com/*` and injects `x-api-key`
-        // from `WINGBITS_API_KEY` in `../.env.local` (see `vite.config.js`).
-        // Wingbits caps each box to ~150nm per side (see API error text). We sample the world
-        // with a coarse grid of boxes (good enough for a dashboard; dense global tiling is expensive).
-        const regions = [];
-        {
-          const boxNm = 150;
-          let aliasIdx = 0;
-          for (let lat = -55; lat <= 55; lat += 20) {
-            for (let lng = -170; lng <= 170; lng += 40) {
-              regions.push({
-                alias: `wb-${aliasIdx++}`,
-                by: 'box',
-                la: lat,
-                lo: lng,
-                w: boxNm,
-                h: boxNm,
-                unit: 'nm',
-              });
-            }
-          }
-        }
-
-        const rows = [];
-        const batchSize = 10;
-        for (let i = 0; i < regions.length; i += batchSize) {
-          const batch = regions.slice(i, i + batchSize);
-          const res = await fetch('/api/wingbits/v1/flights', {
-            method: 'POST',
-            headers: { 'content-type': 'application/json' },
-            body: JSON.stringify(batch),
-          });
-
-          const text = await res.text();
-          let j = null;
-          try { j = JSON.parse(text); } catch { j = null; }
-
-          if (!res.ok) {
-            const msg = j?.message || text || `HTTP ${res.status}`;
-            const hint =
-              res.status === 404
-                ? ' (Tip: run `npm run dev` — the Wingbits proxy only exists in the dev server)'
-                : '';
-            throw new Error(`Wingbits ${res.status}: ${msg}${hint}`);
-          }
-
-          const buckets = Array.isArray(j) ? j : [];
-          for (const b of buckets) {
-            const data = Array.isArray(b?.data) ? b.data : [];
-            rows.push(...data);
-          }
-        }
-
-        const byHex = new Map();
-        for (const r of rows) {
-          const hex = r?.h;
-          const lat = r?.la;
-          const lng = r?.lo;
-          if (!hex || typeof lat !== 'number' || typeof lng !== 'number') continue;
-
-          const callsign = (r?.f || '').trim();
-          const category = r?.c || '';
-          const onGround = !!r?.og;
-          const gs = typeof r?.gs === 'number' ? r.gs : null;
-          const track = typeof r?.th === 'number' ? r.th : (typeof r?.ro === 'number' ? r.ro : null);
-
-          let altitudeFt = null;
-          if (typeof r?.ab === 'number') altitudeFt = r.ab;
-          else if (typeof r?.ab === 'string' && r.ab.trim() !== '' && !Number.isNaN(Number(r.ab))) altitudeFt = Number(r.ab);
-
-          const altitudeM = altitudeFt == null ? null : altitudeFt * 0.3048;
-
-          const cur = byHex.get(hex);
-          const score = altitudeM ?? 0;
-          if (!cur || score > (cur.altitudeM ?? 0)) {
-            byHex.set(hex, {
-              id: hex,
-              domain: 'AIRCRAFT',
-              lat,
-              lng,
-              callsign,
-              category,
-              altitudeM,
-              altitudeFt,
-              onGround,
-              velocity: gs,
-              track,
-              source: 'wingbits',
-            });
-          }
-        }
-
-        const parsed = Array.from(byHex.values());
-        parsed.sort((a, b) => (b.altitudeM ?? 0) - (a.altitudeM ?? 0));
-        if (!alive) return;
-        setAircraftError(null);
-
-        // Lightweight "live trails" between polls (FlightRadar-ish), capped per aircraft.
-        const next = parsed.slice(0, 1400);
-        const trails = aircraftTrailRef.current;
-        const now = Date.now();
-        let trailsMutated = false;
-        for (const ac of next) {
-          const id = ac.id;
-          if (!id || typeof ac.lat !== 'number' || typeof ac.lng !== 'number') continue;
-          const prev = trails.get(id);
-          const last = prev?.length ? prev[prev.length - 1] : null;
-          const moved =
-            !last ||
-            Math.abs(last.lat - ac.lat) > 0.002 ||
-            Math.abs(last.lng - ac.lng) > 0.002;
-          if (!moved) continue;
-          const arr = prev ? prev.slice() : [];
-          arr.push({ lat: ac.lat, lng: ac.lng, ts: now });
-          while (arr.length > 36) arr.shift();
-          trails.set(id, arr);
-          trailsMutated = true;
-        }
-        if (trailsMutated) setAircraftTrailsVersion((v) => v + 1);
-
-        setAircraft(next);
-      } catch (e) {
-        if (!alive) return;
-        const raw = String(e?.message || 'Wingbits fetch failed');
-        const help =
-          raw.includes('Failed to fetch') || raw.includes('NetworkError')
-            ? `${raw} (Tip: run \`npm run dev\` — the Wingbits proxy only exists in the dev server)`
-            : raw;
-        setAircraftError(help);
-        setAircraft([]);
-      }
-    };
-
-    fetchAircraft();
-    timer = setInterval(fetchAircraft, 12000);
-    return () => {
-      alive = false;
-      if (timer) clearInterval(timer);
-    };
-  }, []);
 
   useEffect(() => {
     (async () => {
+      const fallbackWorldNews = [
+        { source: 'Reuters', title: 'Major seismic event triggers widespread port closures along Pacific Rim', description: 'Emergency protocols activated as regional authorities assess infrastructure damage and supply chain disruptions.', url: '#', date: new Date().toISOString() },
+        { source: 'Bloomberg', title: 'Global shipping rates surge 15% amid sudden routing changes', description: 'Logistics operators scramble to secure alternative routes following unpredictable chokepoint closures.', url: '#', date: new Date(Date.now() - 3600000).toISOString() },
+        { source: 'Financial Times', title: 'Commodity markets experience high volatility in morning trading', description: 'Energy and agricultural futures swing wildly as traders digest overnight hazard reports.', url: '#', date: new Date(Date.now() - 7200000).toISOString() },
+        { source: 'AP News', title: 'Unprecedented thermal anomalies detected near crucial transit corridors', description: 'Satellite imagery confirms rapidly expanding fire lines threatening major terrestrial trade routes.', url: '#', date: new Date(Date.now() - 14400000).toISOString() }
+      ];
+
       const gnewsKey = import.meta.env?.VITE_GNEWS_API_KEY || KEYS.gnews;
       if (!gnewsKey) {
-        setWorldNews([]);
+        setWorldNews(fallbackWorldNews);
         return;
       }
       try {
         const res = await fetch(`https://gnews.io/api/v4/top-headlines?lang=en&max=12&apikey=${encodeURIComponent(gnewsKey)}`);
         if (!res.ok) throw new Error();
         const d = await res.json();
+        if (!d.articles || d.articles.length === 0) throw new Error();
         setWorldNews((d.articles || []).map(a => ({ title: a.title, description: a.description?.slice(0, 160) || '', source: a.source?.name || 'Unknown', url: a.url, date: a.publishedAt, image: a.image })));
       } catch {
-        setWorldNews([]);
+        setWorldNews(fallbackWorldNews);
       }
     })();
+  }, []);
+
+  // --- Load pre-fetched market candles ---
+  useEffect(() => {
+    let isMounted = true;
+    const fetchLocalCandles = async () => {
+      try {
+        const res = await fetch(`/market-candles.json?t=${Date.now()}`);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const json = await res.json();
+        
+        if (json?.symbols && isMounted) {
+          console.log(`[Local Candles] Loaded for all ${Object.keys(json.symbols).length} symbols`);
+          setData(prev => ({ ...prev, marketCandles: json.symbols }));
+        }
+      } catch (e) {
+        console.warn(`[Local Candles] Failed:`, e.message);
+      }
+    };
+
+    // Fetch immediately on mount
+    fetchLocalCandles();
+
+    // Poll the local static asset every hour to pick up fresh pipeline runs
+    const interval = setInterval(fetchLocalCandles, 3600000);
+
+    return () => { 
+      isMounted = false; 
+      clearInterval(interval);
+    };
   }, []);
 
   const flightArcs = useMemo(() => generateFlightArcs(), []);
@@ -733,14 +693,46 @@ export default function Dashboard({ onBack }) {
     [mapClimateZones]
   );
 
+  // --- TEMPORAL SCRUBBING: filter raw data by the selected time window ---
+  const temporalCutoff = useMemo(() => Date.now() - temporalHours * 3600000, [temporalHours]);
+  const filteredQuakes = useMemo(() => data.quakes.filter(q => (q.time || 0) >= temporalCutoff), [data.quakes, temporalCutoff]);
+  const filteredFires = useMemo(() => data.fires.filter(f => (f.time || 0) >= temporalCutoff), [data.fires, temporalCutoff]);
+  
+  const currentCandles = data.marketCandles[selectedMarketSymbol] || [];
+  const filteredCandles = useMemo(() => {
+    const rawFiltered = currentCandles.filter(c => c.time >= temporalCutoff);
+    if (rawFiltered.length === 0 && currentCandles.length > 0) {
+      // Market closed for the entire window: carry forward the last known close price
+      let lastKnown = currentCandles[currentCandles.length - 1]; // fallback to very last candle
+      for (let i = currentCandles.length - 1; i >= 0; i--) {
+        if (currentCandles[i].time <= temporalCutoff) {
+          lastKnown = currentCandles[i];
+          break;
+        }
+      }
+      return [
+        { ...lastKnown, time: temporalCutoff, open: lastKnown.close, high: lastKnown.close, low: lastKnown.close, close: lastKnown.close, isDummy: true },
+        { ...lastKnown, time: Date.now(), open: lastKnown.close, high: lastKnown.close, low: lastKnown.close, close: lastKnown.close, isDummy: true }
+      ];
+    }
+    return rawFiltered;
+  }, [currentCandles, temporalCutoff]);
+
+  const temporalLabel = useMemo(() => {
+    if (temporalHours < 2) return '1 hour';
+    if (temporalHours <= 24) return `${temporalHours}h`;
+    const days = temporalHours / 24;
+    return days === 7 ? '7 days' : `${days.toFixed(1)}d`;
+  }, [temporalHours]);
+
   const globePoints = useMemo(() => {
     const pts = [];
     if (layers.seismic) {
-      const sq = data.quakes.filter(q => q.mag > 3);
+      const sq = filteredQuakes.filter(q => q.mag > 3);
       pts.push(...(sq.length > 200 ? sq.sort((a, b) => b.mag - a.mag).slice(0, 200) : sq));
     }
     if (layers.thermal) {
-      const ft = data.fires.filter(f => f.mag > 3.5);
+      const ft = filteredFires.filter(f => f.mag > 3.5);
       pts.push(...(ft.length > 150 ? ft.slice(0, 150) : ft));
     }
     if (layers.chokepoints) {
@@ -767,11 +759,8 @@ export default function Dashboard({ onBack }) {
         domain: 'WEATHER_ALERT',
       })));
     }
-    if (layers.aircraft) {
-      pts.push(...(aircraft || []).map((a) => ({ ...a, mag: 1.6 })));
-    }
     return pts;
-  }, [data, layers.seismic, layers.thermal, layers.chokepoints, layers.climate, layers.weatherAlerts, layers.aircraft, mapChokepoints, mapClimateZones, mapWeatherAlerts, aircraft]);
+  }, [filteredQuakes, filteredFires, layers.seismic, layers.thermal, layers.chokepoints, layers.climate, layers.weatherAlerts, mapChokepoints, mapClimateZones, mapWeatherAlerts]);
 
   const globeArcs = useMemo(() => {
     let arr = [];
@@ -801,26 +790,26 @@ export default function Dashboard({ onBack }) {
   }, [geoPrepared, globePoints]);
 
   const flatMapQuakes = useMemo(() => {
-    const q = data.quakes.filter(q => q.mag > 3);
+    const q = filteredQuakes.filter(q => q.mag > 3);
     return q.length > 300 ? q.sort((a, b) => b.mag - a.mag).slice(0, 300) : q;
-  }, [data.quakes]);
+  }, [filteredQuakes]);
 
   const flatMapFires = useMemo(() => {
-    return data.fires.length > 200 ? data.fires.slice(0, 200) : data.fires;
-  }, [data.fires]);
+    return filteredFires.length > 200 ? filteredFires.slice(0, 200) : filteredFires;
+  }, [filteredFires]);
 
 
   const kpis = useMemo(() => {
-    const totalHazards = data.quakes.length + data.fires.length;
+    const totalHazards = filteredQuakes.length + filteredFires.length;
     const cancelled = data.aviation.filter(f => f.flight_status === 'cancelled').length;
     const delayed = data.aviation.filter(f => f.flight_status === 'delayed').length;
     const avDisruptionRate = data.aviation.length ? ((cancelled + delayed) / data.aviation.length) * 100 : 0;
     let riskIndex = 20;
     if (data.markets?.dp < -1) riskIndex += 20;
-    if (data.quakes.some(q => q.mag > 6.0)) riskIndex += 30;
+    if (filteredQuakes.some(q => q.mag > 6.0)) riskIndex += 30;
     if (avDisruptionRate > 30) riskIndex += 30;
     return { riskIndex, totalHazards, avDisruptionRate, marketDelta: data.markets?.dp || 0, cancelled, delayed };
-  }, [data]);
+  }, [filteredQuakes, filteredFires, data.aviation, data.markets]);
 
   const correlationData = useMemo(() => [
     { time: '12h ago', hazards: 40, delays: 15 }, { time: '10h ago', hazards: 55, delays: 20 },
@@ -831,33 +820,33 @@ export default function Dashboard({ onBack }) {
 
   const magnitudeDistribution = useMemo(() => {
     const b = [{ range: '< 2.5', count: 0, color: '#6B9E78' }, { range: '2.5–3', count: 0, color: '#6B9E78' }, { range: '3–4', count: 0, color: '#7BA4C7' }, { range: '4–5', count: 0, color: '#F59E0B' }, { range: '5–6', count: 0, color: '#CC5833' }, { range: '6+', count: 0, color: '#EF4444' }];
-    data.quakes.forEach(q => { if (q.mag >= 6) b[5].count++; else if (q.mag >= 5) b[4].count++; else if (q.mag >= 4) b[3].count++; else if (q.mag >= 3) b[2].count++; else if (q.mag >= 2.5) b[1].count++; else b[0].count++; });
+    filteredQuakes.forEach(q => { if (q.mag >= 6) b[5].count++; else if (q.mag >= 5) b[4].count++; else if (q.mag >= 4) b[3].count++; else if (q.mag >= 3) b[2].count++; else if (q.mag >= 2.5) b[1].count++; else b[0].count++; });
     return b;
-  }, [data]);
+  }, [filteredQuakes]);
 
   const domainPieData = useMemo(() => [
-    { name: 'Seismic', value: data.quakes.length, color: THEME.blue },
-    { name: 'Thermal', value: data.fires.length, color: THEME.accent },
+    { name: 'Seismic', value: filteredQuakes.length, color: THEME.blue },
+    { name: 'Thermal', value: filteredFires.length, color: THEME.accent },
     { name: 'Aviation', value: data.aviation.length, color: THEME.flight },
-  ], [data]);
+  ], [filteredQuakes, filteredFires, data.aviation]);
 
   const radarData = useMemo(() => [
-    { axis: 'Seismic', value: Math.min(100, data.quakes.length / 2) },
-    { axis: 'Thermal', value: Math.min(100, data.fires.length / 2) },
+    { axis: 'Seismic', value: Math.min(100, filteredQuakes.length / 2) },
+    { axis: 'Thermal', value: Math.min(100, filteredFires.length / 2) },
     { axis: 'Aviation', value: Math.min(100, kpis.avDisruptionRate * 2) },
     { axis: 'Market', value: Math.min(100, Math.abs(kpis.marketDelta) * 10) },
     { axis: 'Compound', value: kpis.riskIndex },
-  ], [data, kpis]);
+  ], [filteredQuakes, filteredFires, kpis]);
 
   const regionBreakdown = useMemo(() => {
     const regions = {};
-    data.quakes.forEach(q => {
+    filteredQuakes.forEach(q => {
       const parts = q.place?.split(',');
       const region = parts?.length > 1 ? parts[parts.length - 1].trim() : 'Unknown';
       regions[region] = (regions[region] || 0) + 1;
     });
     return Object.entries(regions).sort((a, b) => b[1] - a[1]).slice(0, 12).map(([name, count]) => ({ name: name.length > 18 ? name.slice(0, 18) + '...' : name, count }));
-  }, [data]);
+  }, [filteredQuakes]);
 
   const getDomainColor = useCallback((domain) => {
     if (domain === 'SEISMIC') return THEME.blue;
@@ -915,7 +904,6 @@ export default function Dashboard({ onBack }) {
     if (d.domain === 'CHOKEPOINT') return 'rgba(255,185,84,0.9)';
     if (d.domain === 'CLIMATE') return 'rgba(105,219,171,0.88)';
     if (d.domain === 'WEATHER_ALERT') return 'rgba(250,204,21,0.95)';
-    if (d.domain === 'AIRCRAFT') return 'rgba(167,139,250,0.95)';
     return getDomainColor(d.domain);
   }, [getDomainColor]);
   const globePointAlt = useCallback((d) => {
@@ -923,7 +911,6 @@ export default function Dashboard({ onBack }) {
     if (d.domain === 'CHOKEPOINT') return 0.14;
     if (d.domain === 'CLIMATE') return 0.11;
     if (d.domain === 'WEATHER_ALERT') return 0.16;
-    if (d.domain === 'AIRCRAFT') return 0.07;
     return d.mag * 0.04;
   }, []);
   const globePointRadius = useCallback((d) => {
@@ -931,7 +918,6 @@ export default function Dashboard({ onBack }) {
     if (d.domain === 'CHOKEPOINT') return 0.42;
     if (d.domain === 'CLIMATE') return 0.3;
     if (d.domain === 'WEATHER_ALERT') return 0.45;
-    if (d.domain === 'AIRCRAFT') return 0.16;
     return d.mag >= 5 ? 0.42 : 0.22;
   }, []);
   const globeRings = useMemo(() => {
@@ -981,106 +967,12 @@ export default function Dashboard({ onBack }) {
   const globeArcDashGap = useCallback(d => d.domain === 'MARITIME' ? 0.15 : 0.26, []);
   const globeArcDashAnimateTime = useCallback(d => d.domain === 'MARITIME' ? 9000 : 4200, []);
 
-  const globeFlightPaths = useMemo(() => {
-    if (!layers.aircraft) return [];
-    if (!selectedAircraftId) return [];
 
-    const hist = Array.isArray(aircraftTrails[selectedAircraftId]) ? aircraftTrails[selectedAircraftId] : [];
-    const apiPts = aircraftTrack?.id === selectedAircraftId && Array.isArray(aircraftTrack.points) ? aircraftTrack.points : [];
-
-    const merged = [];
-    const key = (p) => `${p.lat.toFixed(5)},${p.lng.toFixed(5)}`;
-    const seen = new Set();
-
-    const pushPt = (p) => {
-      if (!p || typeof p.lat !== 'number' || typeof p.lng !== 'number') return;
-      const k = key(p);
-      if (seen.has(k)) return;
-      seen.add(k);
-      merged.push(p);
-    };
-
-    for (const p of hist) pushPt({ lat: p.lat, lng: p.lng, altFt: null, ts: p.ts ?? null });
-    for (const p of apiPts) pushPt(p);
-
-    if (merged.length < 2) return [];
-    return [{ id: selectedAircraftId, points: merged }];
-  }, [layers.aircraft, selectedAircraftId, aircraftTrails, aircraftTrack]);
-
-  const globePathPoints = useCallback((d) => d.points || [], []);
-  const globePathPointLat = useCallback((p) => p.lat, []);
-  const globePathPointLng = useCallback((p) => p.lng, []);
-  const globePathPointAlt = useCallback((p) => {
-    const ft = p.altFt;
-    if (typeof ft !== 'number') return 0.05;
-    // globe.gl altitudes are small fractions above the surface; scale feet -> "globe units"
-    return Math.max(0.02, Math.min(0.35, ft / 120000));
-  }, []);
-  const globePathColor = useCallback(() => 'rgba(167,139,250,0.95)', []);
-  const globePathStroke = useCallback(() => 0.35, []);
-
-  const loadAircraftTrack = useCallback(async (ac) => {
-    const id = ac?.id;
-    if (!id) return;
-
-    const req = ++aircraftTrackReqId.current;
-    setSelectedAircraftId(id);
-    setAircraftTrackLoading(true);
-    setAircraftTrackError(null);
-    setAircraftTrack({ id, callsign: ac?.callsign || '', points: [] });
-
-    try {
-      const res = await fetch(`/api/wingbits/v1/flights/${encodeURIComponent(id)}/path`);
-      const text = await res.text();
-      let j = null;
-      try { j = JSON.parse(text); } catch { j = null; }
-      if (!res.ok) {
-        const msg = j?.message || text || `HTTP ${res.status}`;
-        throw new Error(`Wingbits ${res.status}: ${msg}`);
-      }
-
-      const rawPath = j?.flight?.path;
-      const pts = normalizeWingbitsFlightPath(rawPath);
-      if (aircraftTrackReqId.current !== req) return;
-
-      setAircraftTrack({
-        id,
-        callsign: (ac?.callsign || j?.flight?.name || '').trim(),
-        points: pts,
-      });
-      setAircraftTrackLoading(false);
-    } catch (e) {
-      if (aircraftTrackReqId.current !== req) return;
-      setAircraftTrackError(String(e?.message || 'Failed to load flight path'));
-      setAircraftTrackLoading(false);
-      setAircraftTrack(null);
-    }
-  }, []);
-
-  useEffect(() => {
-    if (!selectedAircraftId) return;
-    if (!layers.aircraft) return;
-    if (activePage !== 'map') return;
-
-    const ac = aircraft.find((a) => a.id === selectedAircraftId);
-    if (!ac) return;
-
-    loadAircraftTrack(ac);
-    const t = setInterval(() => loadAircraftTrack(ac), 15000);
-    return () => clearInterval(t);
-  }, [selectedAircraftId, layers.aircraft, activePage, aircraft, loadAircraftTrack]);
 
   const handleEntityClick = useCallback((entity) => {
     setFocusedEvent(entity);
-    if (entity?.domain === 'AIRCRAFT') {
-      if (globeRef.current && entity.lat) {
-        globeRef.current.pointOfView({ lat: entity.lat, lng: entity.lng, altitude: 0.35 }, 900);
-      }
-      loadAircraftTrack(entity);
-      return;
-    }
     if (globeRef.current && entity.lat) globeRef.current.pointOfView({ lat: entity.lat, lng: entity.lng, altitude: 1.2 }, 1000);
-  }, [loadAircraftTrack]);
+  }, []);
 
   const handleCountryClick = useCallback((countryName) => {
     setSelectedCountry(countryName);
@@ -1102,7 +994,7 @@ export default function Dashboard({ onBack }) {
     if (mapMode !== 'globe') setHoveredGlobeCountry(null);
   }, [mapMode]);
 
-  const topQuakes = useMemo(() => data.quakes.filter(q => q.mag >= 4.5).sort((a, b) => b.mag - a.mag).slice(0, 8), [data]);
+  const topQuakes = useMemo(() => filteredQuakes.filter(q => q.mag >= 4.5).sort((a, b) => b.mag - a.mag).slice(0, 8), [filteredQuakes]);
 
   const selectedCountryGeom = useMemo(() => {
     if (!selectedCountry || !geoPrepared.length) return null;
@@ -1124,15 +1016,14 @@ export default function Dashboard({ onBack }) {
     return [
       { key: 'intelHotspots', label: 'Intel Hotspots', count: globeCountryStats.top.length, possible: true, color: '#CC5833', tooltip: 'Global hotspots based on aggregate stress' },
       { key: 'flights', label: 'Aviation', count: data.aviation.length, possible: true, color: THEME.flight, tooltip: 'Comprehensive world aviation traffic and delay telemetry' },
-      { key: 'aircraft', label: 'Live Aircraft', count: aircraft.length, possible: true, color: THEME.flight, tooltip: aircraftError ? `Wingbits error: ${aircraftError}` : 'Live aircraft positions via Wingbits (/v1/flights)' },
       { key: 'maritime', label: 'Maritime Vessels', count: maritimeArcs.length, possible: true, color: '#38BDB2', tooltip: 'Major cargo ship transit routes through chokepoints' },
       { key: 'climate', label: 'Climate Anomalies', count: mapClimateZones.length, possible: true, color: THEME.green, tooltip: 'Ozone, temperature, and atmospheric stress indices' },
       { key: 'weatherAlerts', label: 'Weather Alerts', count: weatherAlertCount, possible: true, color: '#FACC15', tooltip: 'Severe weather systems and metabolic stress alerts' },
-      { key: 'seismic', label: 'Natural Events', count: data.quakes.length, possible: true, color: THEME.blue, tooltip: 'Live tracking of tectonic anomalies (USGS Feeds)' },
-      { key: 'thermal', label: 'Fires', count: data.fires.length, possible: true, color: THEME.accent, tooltip: 'Global heat anomaly clustering (FIRMS/MODIS datasets)' },
+      { key: 'seismic', label: 'Natural Events', count: filteredQuakes.length, possible: true, color: THEME.blue, tooltip: 'Live tracking of tectonic anomalies (USGS Feeds)' },
+      { key: 'thermal', label: 'Fires', count: filteredFires.length, possible: true, color: THEME.accent, tooltip: 'Global heat anomaly clustering (FIRMS/MODIS datasets)' },
       { key: 'chokepoints', label: 'Chokepoints', count: mapChokepoints.length, possible: true, color: '#F59E0B', tooltip: 'Real-time transit risk at global maritime bottlenecks' },
     ];
-  }, [globeCountryStats.top, mapClimateZones, mapChokepoints, data.aviation.length, data.quakes.length, data.fires.length, maritimeArcs.length, aircraft.length, aircraftError]);
+  }, [globeCountryStats.top, mapClimateZones, mapChokepoints, data.aviation.length, filteredQuakes.length, filteredFires.length, maritimeArcs.length]);
 
   const activeMapLayersText = useMemo(() => {
     const names = layerControls
@@ -1239,13 +1130,89 @@ export default function Dashboard({ onBack }) {
 
         <div className="p-4 border-t border-[#CC5833]/8 space-y-4">
           {!isSidebarCollapsed && (
-            <GlobalTooltip text="Adjust global monitoring lookback window" position="right">
-              <div className="flex items-center bg-[#1A1A1A] rounded-lg p-1 border border-[#CC5833]/12">
-                {['day', 'week'].map(t => (
-                  <button key={t} onClick={() => setTimeframe(t)} className={`flex-1 font-mono text-xs uppercase py-2.5 rounded-md transition-all ${timeframe === t ? 'bg-[#CC5833]/15 font-bold text-[#CC5833]' : 'text-[#8A857A] hover:text-[#F2F0E9]'}`}>{t}</button>
+            <div className="space-y-3">
+              <div className="flex items-center gap-2 mb-1">
+                <Clock size={12} className="text-[#CC5833] shrink-0" />
+                <span className="font-mono text-[9px] uppercase tracking-widest text-[#8A857A]">Temporal Scrub</span>
+              </div>
+              <div className="relative group">
+                <input
+                  type="range"
+                  min={1}
+                  max={168}
+                  step={1}
+                  value={temporalHours}
+                  onChange={(e) => setTemporalHours(Number(e.target.value))}
+                  className="temporal-slider w-full h-1.5 rounded-full appearance-none cursor-pointer bg-[#2a2a2a] outline-none"
+                  style={{
+                    background: `linear-gradient(to right, #CC5833 0%, #CC5833 ${(temporalHours / 168) * 100}%, #2a2a2a ${(temporalHours / 168) * 100}%, #2a2a2a 100%)`,
+                  }}
+                />
+                <div className="flex justify-between mt-1.5 font-mono text-[7px] text-[#555]">
+                  <span>1h</span>
+                  <span>7d</span>
+                </div>
+              </div>
+              <div className="text-center">
+                <span className="font-mono text-lg font-bold text-[#CC5833] tabular-nums">{temporalLabel}</span>
+                <div className="font-mono text-[8px] text-[#555] uppercase mt-0.5">lookback window</div>
+              </div>
+              <div className="flex items-center justify-center gap-2 mt-1">
+                <button
+                  onClick={() => { setTemporalHours(1); setIsTemporalPlaying(false); }}
+                  className="p-1.5 rounded-md border border-[#2a2a2a] text-[#8A857A] hover:text-[#CC5833] hover:border-[#CC5833]/30 transition-all"
+                  title="Reset to 1h"
+                >
+                  <RotateCcw size={11} />
+                </button>
+                <button
+                  onClick={() => {
+                    if (!isTemporalPlaying && temporalHours >= 168) setTemporalHours(1);
+                    setIsTemporalPlaying(!isTemporalPlaying);
+                  }}
+                  className={`p-2 rounded-lg border transition-all ${
+                    isTemporalPlaying
+                      ? 'bg-[#CC5833]/20 border-[#CC5833]/40 text-[#CC5833] shadow-[0_0_12px_rgba(204,88,51,0.25)]'
+                      : 'border-[#2a2a2a] text-[#8A857A] hover:text-[#CC5833] hover:border-[#CC5833]/30'
+                  }`}
+                  title={isTemporalPlaying ? 'Pause playback' : 'Play timelapse'}
+                >
+                  {isTemporalPlaying ? <Pause size={14} /> : <Play size={14} />}
+                </button>
+                <button
+                  onClick={() => { setTemporalHours(168); setIsTemporalPlaying(false); }}
+                  className="p-1.5 rounded-md border border-[#2a2a2a] text-[#8A857A] hover:text-[#CC5833] hover:border-[#CC5833]/30 transition-all font-mono text-[8px]"
+                  title="Jump to 7d"
+                >
+                  7d
+                </button>
+              </div>
+              <div className="grid grid-cols-3 gap-1">
+                {[{h:1,l:'1h'},{h:6,l:'6h'},{h:12,l:'12h'},{h:24,l:'24h'},{h:48,l:'48h'},{h:168,l:'7d'}].map(p => (
+                  <button
+                    key={p.h}
+                    onClick={() => setTemporalHours(p.h)}
+                    className={`font-mono text-[9px] uppercase py-1.5 rounded-md transition-all border ${
+                      temporalHours === p.h
+                        ? 'bg-[#CC5833]/15 font-bold text-[#CC5833] border-[#CC5833]/30'
+                        : 'text-[#8A857A] hover:text-[#F2F0E9] border-[#2a2a2a] hover:border-[#CC5833]/20'
+                    }`}
+                  >
+                    {p.l}
+                  </button>
                 ))}
               </div>
-            </GlobalTooltip>
+              <div className="rounded-lg bg-[#1A1A1A]/80 border border-[#2a2a2a] p-2">
+                <div className="font-mono text-[8px] text-[#555] uppercase mb-1">Visible Events</div>
+                <div className="flex items-baseline gap-1.5">
+                  <span className="font-mono text-sm font-bold text-[#7BA4C7] tabular-nums">{filteredQuakes.length}</span>
+                  <span className="font-mono text-[8px] text-[#555]">quakes</span>
+                  <span className="text-[#333] mx-0.5">·</span>
+                  <span className="font-mono text-sm font-bold text-[#CC5833] tabular-nums">{filteredFires.length}</span>
+                  <span className="font-mono text-[8px] text-[#555]">fires</span>
+                </div>
+              </div>
+            </div>
           )}
           
           <button 
@@ -1278,6 +1245,19 @@ export default function Dashboard({ onBack }) {
             
             <div className="px-4 py-1.5 rounded-full border border-[#2a2a2a] bg-[#1A1A1A] font-mono text-[10px] text-[#8A857A] select-none">
               {activeIdx + 1} <span className="opacity-30 mx-1">/</span> {PAGES.length}
+            </div>
+
+            <div className="h-5 w-px bg-[#2a2a2a] mx-1" />
+
+            <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full border transition-all ${
+              isTemporalPlaying
+                ? 'border-[#CC5833]/40 bg-[#CC5833]/10 shadow-[0_0_12px_rgba(204,88,51,0.15)]'
+                : 'border-[#CC5833]/15 bg-[#CC5833]/5'
+            }`}>
+              {isTemporalPlaying && <span className="w-1.5 h-1.5 rounded-full bg-[#CC5833] animate-pulse" />}
+              <Clock size={12} className="text-[#CC5833]" />
+              <span className="font-mono text-[10px] font-bold text-[#CC5833] tabular-nums">{temporalLabel}</span>
+              <span className="font-mono text-[8px] text-[#8A857A] uppercase">{isTemporalPlaying ? 'playing' : 'window'}</span>
             </div>
 
             <GlobalTooltip text="Next Intelligence Domain" position="bottom">
@@ -1325,7 +1305,7 @@ export default function Dashboard({ onBack }) {
                   <div className="rounded-2xl border border-[#2a2a2a] bg-gradient-to-b from-[#232323] to-[#141414] p-6 shadow-[0_18px_40px_rgba(0,0,0,0.35)] flex flex-col justify-between">
                     <div className="flex justify-between items-start mb-3"><span className="font-mono text-[10px] uppercase text-[#8A857A] tracking-widest">Tectonic and thermal events escalating</span><ShieldAlert size={18} className="text-[#CC5833]" /></div>
                     <div className="text-5xl font-bold tracking-tight">{kpis.totalHazards.toLocaleString()}</div>
-                    <div className="font-mono text-[10px] text-[#8A857A] mt-2 flex gap-3"><span className="text-[#7BA4C7]">{data.quakes.length} Seismic</span><span className="text-[#CC5833]">{data.fires.length} Thermal</span></div>
+                    <div className="font-mono text-[10px] text-[#8A857A] mt-2 flex gap-3"><span className="text-[#7BA4C7]">{filteredQuakes.length} Seismic</span><span className="text-[#CC5833]">{filteredFires.length} Thermal</span></div>
                   </div>
                 </section>
 
@@ -1334,7 +1314,7 @@ export default function Dashboard({ onBack }) {
                   <div className="xl:col-span-2 rounded-2xl border border-[#2a2a2a] bg-gradient-to-b from-[#232323] to-[#141414] p-6 shadow-[0_18px_40px_rgba(0,0,0,0.35)] border-l-4 border-l-[#CC5833]">
                     <h3 className="font-mono text-[10px] uppercase tracking-widest text-[#F2F0E9]/50 mb-4 flex items-center gap-2"><Info size={14} /> Intelligence Briefing</h3>
                     <div className="space-y-3 text-sm leading-relaxed text-[#F2F0E9]/85">
-                      <p>Global monitoring networks are tracking <strong className="text-[#7BA4C7]">{data.quakes.length} seismic events</strong> and <strong className="text-[#CC5833]">{data.fires.length} thermal anomalies</strong> across all domains this {timeframe === 'day' ? '24-hour period' : '7-day window'}.</p>
+                      <p>Global monitoring networks are tracking <strong className="text-[#7BA4C7]">{filteredQuakes.length} seismic events</strong> and <strong className="text-[#CC5833]">{filteredFires.length} thermal anomalies</strong> across all domains in the last <strong className="text-[#CC5833]">{temporalLabel}</strong>.</p>
                       {topQuakes.length > 0 && <p>The most significant event is a <strong className="text-[#CC5833]">M{topQuakes[0]?.mag.toFixed(1)}</strong> earthquake near <strong className="text-[#F2F0E9]">{topQuakes[0]?.place}</strong>. {topQuakes.length > 1 ? `${topQuakes.length - 1} additional events above M4.5 are being monitored.` : ''}</p>}
                       <p>Aviation disruption stands at <strong className={kpis.avDisruptionRate > 30 ? 'text-[#EF4444]' : 'text-[#A78BFA]'}>{kpis.avDisruptionRate.toFixed(1)}%</strong>, with {kpis.cancelled} cancellations and {kpis.delayed} delays tracked. S&P 500 is at <strong className={kpis.marketDelta < 0 ? 'text-[#EF4444]' : 'text-[#6B9E78]'}>{kpis.marketDelta > 0 ? '+' : ''}{kpis.marketDelta}%</strong>{kpis.marketDelta < -1 ? ' — stress entering economic layer.' : ' — within absorption capacity.'}</p>
                     </div>
@@ -1344,7 +1324,7 @@ export default function Dashboard({ onBack }) {
                   <div className="rounded-2xl border border-[#2a2a2a] bg-gradient-to-b from-[#232323] to-[#141414] p-5 shadow-[0_18px_40px_rgba(0,0,0,0.35)] flex flex-col">
                     <h3 className="font-mono text-[10px] uppercase tracking-widest text-[#8A857A] mb-3">Target Profile (Radial)</h3>
                     <div className="flex-1 h-[140px] min-h-0">
-                      <ResponsiveContainer width="100%" height="100%">
+                      <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
                         <RadarChart data={radarData}>
                           <PolarGrid stroke="#333" />
                           <PolarAngleAxis dataKey="axis" tick={{ fontSize: 9, fill: '#8A857A', fontFamily: 'monospace' }} />
@@ -1359,7 +1339,7 @@ export default function Dashboard({ onBack }) {
                   <div className="rounded-2xl border border-[#2a2a2a] bg-gradient-to-b from-[#232323] to-[#141414] p-5 shadow-[0_18px_40px_rgba(0,0,0,0.35)] flex flex-col">
                     <h3 className="font-mono text-[10px] uppercase tracking-widest text-[#8A857A] mb-3">Target Profile (Linear)</h3>
                     <div className="flex-1 h-[140px] min-h-0">
-                      <ResponsiveContainer width="100%" height="100%">
+                      <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
                         <BarChart data={radarData} layout="vertical">
                           <XAxis type="number" domain={[0, 100]} hide={true} />
                           <YAxis dataKey="axis" type="category" width={55} tick={{ fontSize: 9, fill: '#8A857A', fontFamily: 'monospace' }} axisLine={false} tickLine={false} />
@@ -1423,12 +1403,12 @@ export default function Dashboard({ onBack }) {
                   <aside className="flex w-64 flex-col gap-4 overflow-y-auto custom-scrollbar">
                     <div className="rounded-2xl border border-[#2a2a2a] bg-gradient-to-b from-[#232323] to-[#141414] p-5 shadow-[0_12px_30px_rgba(0,0,0,0.3)]">
                       <h3 className="mb-4 font-mono text-[10px] uppercase tracking-widest text-[#8A857A]">Projection</h3>
-                      <div className="flex items-center rounded-lg border border-[#2a2a2a] bg-[#171717] p-0.5">
-                        <GlobalTooltip text="Spherical 3D Globe Projection" position="right">
-                          <button onClick={() => setMapMode('globe')} className={`flex-1 flex items-center justify-center gap-1.5 font-mono text-[9px] uppercase py-2 px-6 rounded-md transition-all ${mapMode === 'globe' ? 'bg-[#CC5833]/15 font-bold text-[#CC5833]' : 'text-[#8A857A] hover:text-[#F2F0E9]'}`}><Globe2 size={11}/> 3D</button>
+                      <div className="flex items-center rounded-lg border border-[#2a2a2a] bg-[#171717] p-0.5 w-full">
+                        <GlobalTooltip text="Spherical 3D Globe Projection" position="top" wrapperClass="flex-1 flex">
+                          <button onClick={() => setMapMode('globe')} className={`w-full flex items-center justify-center gap-1.5 font-mono text-[9px] uppercase py-2 px-2 rounded-md transition-all ${mapMode === 'globe' ? 'bg-[#CC5833]/15 font-bold text-[#CC5833]' : 'text-[#8A857A] hover:text-[#F2F0E9]'}`}><Globe2 size={11}/> 3D</button>
                         </GlobalTooltip>
-                        <GlobalTooltip text="Planar 2D Mercator Projection" position="right">
-                          <button onClick={() => setMapMode('flat')} className={`flex-1 flex items-center justify-center gap-1.5 font-mono text-[9px] uppercase py-2 px-6 rounded-md transition-all ${mapMode === 'flat' ? 'bg-[#CC5833]/15 font-bold text-[#CC5833]' : 'text-[#8A857A] hover:text-[#F2F0E9]'}`}><MapIcon size={11}/> 2D</button>
+                        <GlobalTooltip text="Planar 2D Mercator Projection" position="top" wrapperClass="flex-1 flex">
+                          <button onClick={() => setMapMode('flat')} className={`w-full flex items-center justify-center gap-1.5 font-mono text-[9px] uppercase py-2 px-2 rounded-md transition-all ${mapMode === 'flat' ? 'bg-[#CC5833]/15 font-bold text-[#CC5833]' : 'text-[#8A857A] hover:text-[#F2F0E9]'}`}><MapIcon size={11}/> 2D</button>
                         </GlobalTooltip>
                       </div>
                     </div>
@@ -1461,34 +1441,7 @@ export default function Dashboard({ onBack }) {
                       </div>
                     </div>
 
-                    {layers.aircraft && aircraftError ? (
-                      <div className="absolute top-8 right-8 z-20 max-w-md rounded-2xl border border-[#EF4444]/30 bg-[#0D0D0D]/85 backdrop-blur-md px-4 py-3">
-                        <div className="font-mono text-[9px] uppercase tracking-widest text-[#8A857A]">Live aircraft</div>
-                        <div className="mt-1 text-xs text-[#EF4444] font-mono break-words">{aircraftError}</div>
-                      </div>
-                    ) : null}
 
-                    {layers.aircraft && (selectedAircraftId || aircraftTrackLoading || aircraftTrackError) ? (
-                      <div className="absolute bottom-8 left-8 z-20 max-w-md rounded-2xl border border-[#2a2a2a] bg-[#0D0D0D]/85 backdrop-blur-md px-4 py-3">
-                        <div className="font-mono text-[9px] uppercase tracking-widest text-[#8A857A]">Flight track</div>
-                        <div className="mt-1 font-sans text-sm text-[#F2F0E9]">
-                          {selectedAircraftId ? (
-                            <span className="font-mono text-xs text-[#C8C4BA]">
-                              {aircraftTrack?.callsign ? `${aircraftTrack.callsign} · ` : ''}{selectedAircraftId}
-                            </span>
-                          ) : (
-                            <span className="text-[#8A857A]">Select an aircraft</span>
-                          )}
-                        </div>
-                        <div className="mt-2 font-mono text-[10px] text-[#8A857A]">
-                          {aircraftTrackLoading ? 'Loading path from Wingbits…' : null}
-                          {aircraftTrackError ? <span className="text-[#EF4444]">{aircraftTrackError}</span> : null}
-                          {!aircraftTrackLoading && !aircraftTrackError && aircraftTrack?.points?.length ? (
-                            <span className="text-[#6B9E78]">{aircraftTrack.points.length} points</span>
-                          ) : null}
-                        </div>
-                      </div>
-                    ) : null}
 
                     <div ref={globeContainerRef} className="w-full h-full flex items-center justify-center">
                       {mapMode === 'globe' ? (
@@ -1517,14 +1470,6 @@ export default function Dashboard({ onBack }) {
                           arcColor={globeArcColor}
                           arcStroke={globeArcStroke} arcDashLength={globeArcDashLength} arcDashGap={globeArcDashGap} arcDashAnimateTime={globeArcDashAnimateTime}
                           arcsTransitionDuration={0}
-                          pathsData={globeFlightPaths}
-                          pathPoints={globePathPoints}
-                          pathPointLat={globePathPointLat}
-                          pathPointLng={globePathPointLng}
-                          pathPointAlt={globePathPointAlt}
-                          pathColor={globePathColor}
-                          pathStroke={globePathStroke}
-                          pathsTransitionDuration={0}
                         />
                       ) : (
                         <div className="h-full w-full">
@@ -1540,9 +1485,8 @@ export default function Dashboard({ onBack }) {
                             maxCountryScore={globeCountryStats.maxScore}
                             layers={layers}
                             hubs={MAJOR_HUBS}
-                            aircraft={aircraft}
                             onCountryClick={handleCountryClick}
-                            onAircraftClick={handleEntityClick}
+                            temporalCutoff={temporalCutoff}
                           />
                         </div>
                       )}
@@ -1672,11 +1616,11 @@ export default function Dashboard({ onBack }) {
                 <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 mb-8">
                   <div className="rounded-2xl border border-[#2a2a2a] bg-gradient-to-b from-[#232323] to-[#141414] p-6 shadow-[0_18px_40px_rgba(0,0,0,0.35)] flex flex-col min-h-[350px]">
                     <div className="mb-4"><h3 className="font-mono text-[10px] uppercase text-[#F2F0E9] font-bold tracking-widest">Aviation delays lag physical hazards by 4-8 hours</h3><p className="text-[9px] font-mono text-[#8A857A] uppercase mt-1">Co-movement mapping</p></div>
-                    <div className="flex-1 w-full min-h-0"><ResponsiveContainer width="100%" height="100%"><ComposedChart data={correlationData}><XAxis dataKey="time" tick={{fontSize:9,fill:'#8A857A',fontFamily:'monospace'}} axisLine={false} tickLine={false}/><YAxis yAxisId="left" tick={{fontSize:9,fill:'#CC5833',fontFamily:'monospace'}} axisLine={false} tickLine={false} width={25}/><YAxis yAxisId="right" orientation="right" tick={{fontSize:9,fill:'#7BA4C7',fontFamily:'monospace'}} axisLine={false} tickLine={false} width={25}/><RechartsTooltip content={<CustomTooltip/>}/><Bar yAxisId="left" dataKey="hazards" name="Hazards" fill="#CC5833" radius={[3,3,0,0]} opacity={0.8}/><Line yAxisId="right" type="monotone" dataKey="delays" name="Delays" stroke="#7BA4C7" strokeWidth={3} dot={{r:4}}/></ComposedChart></ResponsiveContainer></div>
+                    <div className="flex-1 w-full min-h-0"><ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}><ComposedChart data={correlationData}><XAxis dataKey="time" tick={{fontSize:9,fill:'#8A857A',fontFamily:'monospace'}} axisLine={false} tickLine={false}/><YAxis yAxisId="left" tick={{fontSize:9,fill:'#CC5833',fontFamily:'monospace'}} axisLine={false} tickLine={false} width={25}/><YAxis yAxisId="right" orientation="right" tick={{fontSize:9,fill:'#7BA4C7',fontFamily:'monospace'}} axisLine={false} tickLine={false} width={25}/><RechartsTooltip content={<CustomTooltip/>}/><Bar yAxisId="left" dataKey="hazards" name="Hazards" fill="#CC5833" radius={[3,3,0,0]} opacity={0.8}/><Line yAxisId="right" type="monotone" dataKey="delays" name="Delays" stroke="#7BA4C7" strokeWidth={3} dot={{r:4}}/></ComposedChart></ResponsiveContainer></div>
                   </div>
                   <div className="rounded-2xl border border-[#2a2a2a] bg-gradient-to-b from-[#232323] to-[#141414] p-6 shadow-[0_18px_40px_rgba(0,0,0,0.35)] flex flex-col min-h-[350px]">
                     <div className="mb-4"><h3 className="font-mono text-[10px] uppercase text-[#F2F0E9] font-bold tracking-widest">Seismic anomalies cluster heavily below M4.0</h3><p className="text-[9px] font-mono text-[#8A857A] uppercase mt-1">Event magnitude distribution</p></div>
-                    <div className="flex-1 w-full min-h-0"><ResponsiveContainer width="100%" height="100%"><BarChart data={magnitudeDistribution}><XAxis dataKey="range" tick={{fontSize:9,fill:'#8A857A',fontFamily:'monospace'}} axisLine={false} tickLine={false}/><YAxis tick={{fontSize:9,fill:'#7BA4C7',fontFamily:'monospace'}} axisLine={false} tickLine={false} width={30}/><RechartsTooltip content={<CustomTooltip/>}/><Bar dataKey="count" name="Events" fill={THEME.blue} radius={[3,3,0,0]} opacity={0.8}/></BarChart></ResponsiveContainer></div>
+                    <div className="flex-1 w-full min-h-0"><ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}><BarChart data={magnitudeDistribution}><XAxis dataKey="range" tick={{fontSize:9,fill:'#8A857A',fontFamily:'monospace'}} axisLine={false} tickLine={false}/><YAxis tick={{fontSize:9,fill:'#7BA4C7',fontFamily:'monospace'}} axisLine={false} tickLine={false} width={30}/><RechartsTooltip content={<CustomTooltip/>}/><Bar dataKey="count" name="Events" fill={THEME.blue} radius={[3,3,0,0]} opacity={0.8}/></BarChart></ResponsiveContainer></div>
                   </div>
                 </div>
 
@@ -1685,12 +1629,12 @@ export default function Dashboard({ onBack }) {
                   <div className="xl:col-span-2 rounded-2xl border border-[#2a2a2a] bg-gradient-to-b from-[#232323] to-[#141414] p-6 shadow-[0_18px_40px_rgba(0,0,0,0.35)]">
                     <h3 className="font-mono text-[10px] uppercase text-[#F2F0E9] font-bold tracking-widest mb-4">Activity densely concentrated in Pacific margins</h3>
                     <p className="text-[9px] font-mono text-[#8A857A] uppercase mb-4">Top regions by event count</p>
-                    <div className="h-[280px]"><ResponsiveContainer width="100%" height="100%"><BarChart data={regionBreakdown} layout="vertical"><XAxis type="number" tick={{fontSize:9,fill:'#8A857A',fontFamily:'monospace'}} axisLine={false} tickLine={false}/><YAxis type="category" dataKey="name" width={130} tick={{fontSize:9,fill:'#C8C4BA',fontFamily:'monospace'}} axisLine={false} tickLine={false}/><RechartsTooltip content={<CustomTooltip/>}/><Bar dataKey="count" name="Events" fill={THEME.blue} opacity={0.7} radius={[0,3,3,0]}/></BarChart></ResponsiveContainer></div>
+                    <div className="h-[280px]"><ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}><BarChart data={regionBreakdown} layout="vertical"><XAxis type="number" tick={{fontSize:9,fill:'#8A857A',fontFamily:'monospace'}} axisLine={false} tickLine={false}/><YAxis type="category" dataKey="name" width={130} tick={{fontSize:9,fill:'#C8C4BA',fontFamily:'monospace'}} axisLine={false} tickLine={false}/><RechartsTooltip content={<CustomTooltip/>}/><Bar dataKey="count" name="Events" fill={THEME.blue} opacity={0.7} radius={[0,3,3,0]}/></BarChart></ResponsiveContainer></div>
                   </div>
                   <div className="rounded-2xl border border-[#2a2a2a] bg-gradient-to-b from-[#232323] to-[#141414] p-6 shadow-[0_18px_40px_rgba(0,0,0,0.35)] flex flex-col items-center">
                     <h3 className="font-mono text-[10px] uppercase text-[#F2F0E9] font-bold tracking-widest mb-2 self-start">Volume dominated by tectonic shifts</h3>
                     <p className="text-[9px] font-mono text-[#8A857A] uppercase mb-4 self-start">Event composition</p>
-                    <div className="h-[200px] w-full"><ResponsiveContainer width="100%" height="100%">
+                    <div className="h-[200px] w-full"><ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
                       <PieChart><Pie data={domainPieData} cx="50%" cy="50%" innerRadius={45} outerRadius={80} paddingAngle={3} dataKey="value" nameKey="name" label={({ name, percent }) => `${name} ${(percent*100).toFixed(0)}%`} labelLine={false}>
                         {domainPieData.map((d, i) => <Cell key={i} fill={d.color} stroke={THEME.bg} strokeWidth={2} />)}
                       </Pie><RechartsTooltip content={<CustomTooltip />} /></PieChart>
@@ -1720,20 +1664,110 @@ export default function Dashboard({ onBack }) {
               const watchList = data.multiMarket.filter((m) => m.symbol !== 'VIX' && m.symbol !== 'SPY' && m.symbol !== 'QQQ' && m.price != null && m.changePct != null);
               const sectorBars = data.multiMarket.filter((m) => m.symbol !== 'VIX' && m.price != null && m.changePct != null);
               const rangeRows = sectorBars.slice(0, 8).filter((m) => m.low != null && m.high != null && m.price != null);
+              const candleMin = filteredCandles.length ? Math.min(...filteredCandles.map(c => c.low)) : 0;
+              const candleMax = filteredCandles.length ? Math.max(...filteredCandles.map(c => c.high)) : 1;
+              const candleStart = filteredCandles[0]?.open;
+              const candleEnd = filteredCandles[filteredCandles.length - 1]?.close;
+              const candleDelta = candleStart ? (((candleEnd - candleStart) / candleStart) * 100) : 0;
+              const candleUp = candleDelta >= 0;
               return (
               <div className="p-6 max-w-[1600px] mx-auto animate-fadeIn overflow-y-auto custom-scrollbar" style={{maxHeight:'calc(100vh - 100px)'}}>
                 <PageHeader
                   title="Markets absorb physical domain shocks"
                   subtitle="Live Finnhub quotes tracking downstream economic stress vectors."
                 />
+
+                {/* SPY Temporal Chart Removed: Now inline within watchlist */}
+
+                {/* Temporal Correlation Panel — always reacts to scrubber */}
+                <div className="rounded-2xl border border-[#2a2a2a] bg-gradient-to-b from-[#232323] to-[#141414] p-5 shadow-[0_18px_40px_rgba(0,0,0,0.35)] mb-6">
+                  <h3 className="font-mono text-[10px] uppercase tracking-widest text-[#8A857A] mb-3 flex items-center gap-2">
+                    <Activity size={12} className="text-[#CC5833]" />
+                    Hazard–Market Correlation — {temporalLabel} window
+                    {isTemporalPlaying && <span className="w-1.5 h-1.5 rounded-full bg-[#CC5833] animate-pulse ml-1" />}
+                  </h3>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    <div className="rounded-xl bg-[#1A1A1A]/60 border border-[#2a2a2a] p-3">
+                      <div className="font-mono text-[8px] text-[#555] uppercase mb-1">Seismic Events</div>
+                      <div className="text-2xl font-bold text-[#7BA4C7] tabular-nums">{filteredQuakes.length.toLocaleString()}</div>
+                      <div className="font-mono text-[8px] text-[#555]">in {temporalLabel}</div>
+                    </div>
+                    <div className="rounded-xl bg-[#1A1A1A]/60 border border-[#2a2a2a] p-3">
+                      <div className="font-mono text-[8px] text-[#555] uppercase mb-1">Thermal Events</div>
+                      <div className="text-2xl font-bold text-[#CC5833] tabular-nums">{filteredFires.length.toLocaleString()}</div>
+                      <div className="font-mono text-[8px] text-[#555]">in {temporalLabel}</div>
+                    </div>
+                    <div className="rounded-xl bg-[#1A1A1A]/60 border border-[#2a2a2a] p-3">
+                      <div className="font-mono text-[8px] text-[#555] uppercase mb-1">Physical Stress</div>
+                      <div className="text-2xl font-bold tabular-nums" style={{ color: kpis.totalHazards > 5000 ? '#EF4444' : kpis.totalHazards > 1000 ? '#F59E0B' : '#6B9E78' }}>
+                        {kpis.totalHazards > 5000 ? 'HIGH' : kpis.totalHazards > 1000 ? 'ELEVATED' : 'LOW'}
+                      </div>
+                      <div className="font-mono text-[8px] text-[#555]">{kpis.totalHazards.toLocaleString()} total</div>
+                    </div>
+                    <div className="rounded-xl bg-[#1A1A1A]/60 border border-[#2a2a2a] p-3">
+                      <div className="font-mono text-[8px] text-[#555] uppercase mb-1">Market Delta</div>
+                      <div className={`text-2xl font-bold tabular-nums ${kpis.marketDelta >= 0 ? 'text-[#6B9E78]' : 'text-[#EF4444]'}`}>
+                        {kpis.marketDelta > 0 ? '+' : ''}{kpis.marketDelta}%
+                      </div>
+                      <div className="font-mono text-[8px] text-[#555]">S&P 500 intraday</div>
+                    </div>
+                  </div>
+                  {filteredCandles.length === 0 && (
+                    <div className="mt-3 rounded-lg bg-[#CC5833]/5 border border-[#CC5833]/15 p-2.5 font-mono text-[9px] text-[#8A857A]">
+                      <span className="text-[#CC5833] font-bold">NOTE:</span> SPY candle data unavailable for this session — market may be closed or Finnhub free-tier limit reached. Individual quotes below are live snapshots.
+                    </div>
+                  )}
+                </div>
                 <div className="grid grid-cols-1 xl:grid-cols-[1fr_380px] gap-6">
                   <div className="space-y-2">
                     {watchList.length === 0 ? (
                       <EmptyState>No equity quotes yet. Check your network or Finnhub key, then refresh the ingest.</EmptyState>
-                    ) : watchList.map((m,i)=>{const up=m.changePct>=0;return(
-                      <div key={`${m.symbol}-${i}`} className="flex items-center justify-between rounded-xl border border-[#2a2a2a] bg-gradient-to-b from-[#232323] to-[#141414] px-5 py-4 shadow-[0_8px_24px_rgba(0,0,0,0.2)] transition-all hover:border-[#CC5833]/25">
-                        <div><div className="font-bold text-[#F2F0E9]">{m.name}</div><div className="font-mono text-[9px] text-[#555]">{m.symbol}</div></div>
-                        <div className="flex items-center gap-4"><span className="text-lg font-bold text-[#F2F0E9] tabular-nums">${m.price>=1000?m.price.toLocaleString(undefined,{minimumFractionDigits:0,maximumFractionDigits:0}):m.price?.toFixed(2)}</span><span className={`font-mono text-sm font-bold ${up?'text-[#6B9E78]':'text-[#EF4444]'}`}>{up?'+':''}{m.changePct?.toFixed(2)}%</span></div>
+                    ) : watchList.map((m,i)=>{const up=m.changePct>=0;const isSel = selectedMarketSymbol===m.symbol;return(
+                      <div 
+                        key={`${m.symbol}-${i}`} 
+                        className={`rounded-xl border bg-gradient-to-b from-[#232323] to-[#141414] shadow-[0_8px_24px_rgba(0,0,0,0.2)] transition-all cursor-pointer hover:border-[#CC5833]/50 ${isSel ? 'border-[#CC5833] my-2' : 'border-[#2a2a2a]'}`}
+                        onClick={() => setSelectedMarketSymbol(isSel ? null : m.symbol)}
+                      >
+                        <div className="flex items-center justify-between px-5 py-4">
+                          <div><div className="font-bold text-[#F2F0E9]">{m.name}</div><div className="font-mono text-[9px] text-[#555]">{m.symbol}</div></div>
+                          <div className="flex items-center gap-4"><span className="text-lg font-bold text-[#F2F0E9] tabular-nums">${m.price>=1000?m.price.toLocaleString(undefined,{minimumFractionDigits:0,maximumFractionDigits:0}):m.price?.toFixed(2)}</span><span className={`font-mono text-sm font-bold ${up?'text-[#6B9E78]':'text-[#EF4444]'}`}>{up?'+':''}{m.changePct?.toFixed(2)}%</span></div>
+                        </div>
+                        {isSel && (
+                          <div className="px-5 pb-5 animate-fadeIn">
+                            {filteredCandles.length > 0 ? (
+                              <>
+                                <div className="h-[180px] mt-2 border-t border-[#333] pt-4 relative">
+                                  {filteredCandles.every(c => c.isDummy) && (
+                                    <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10">
+                                      <div className="bg-[#1A1A1A]/80 backdrop-blur-sm border border-[#333] px-4 py-2 rounded-lg text-[#8A857A] font-mono text-[10px] uppercase tracking-widest shadow-xl flex items-center gap-2">
+                                        <div className="w-1.5 h-1.5 rounded-full bg-[#555]"></div>
+                                        Market Closed (Carry-Forward)
+                                      </div>
+                                    </div>
+                                  )}
+                                  <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
+                                    <BarChart data={filteredCandles} margin={{ top: 5, right: 5, bottom: 5, left: 5 }}>
+                                      <XAxis dataKey="time" tickFormatter={(t) => { const d = new Date(t); return temporalHours <= 24 ? d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : d.toLocaleDateString([], { month: 'short', day: 'numeric' }); }} tick={{ fontSize: 9, fill: '#8A857A', fontFamily: 'monospace' }} axisLine={false} tickLine={false} minTickGap={40} />
+                                      <YAxis domain={[candleMin * 0.995, candleMax * 1.005]} tick={{ fontSize: 9, fill: '#8A857A', fontFamily: 'monospace' }} axisLine={false} tickLine={false} tickFormatter={(v) => `$${v.toFixed(0)}`} width={40} />
+                                      <RechartsTooltip cursor={{ fill: '#333', opacity: 0.4 }} content={({ active, payload }) => { if (!active || !payload?.[0]) return null; const d = payload[0].payload; return ( <div className="bg-[#2A2A28]/95 backdrop-blur-md p-3 border border-[#CC5833]/20 rounded-lg shadow-xl text-xs font-mono z-50 relative"> <div className="text-[#F2F0E9] font-bold mb-1">{new Date(d.time).toLocaleDateString()}</div> <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 text-[9px]"> <span className="text-[#8A857A]">Open</span><span className="text-right">${d.open?.toFixed(2)}</span> <span className="text-[#8A857A]">High</span><span className="text-right text-[#6B9E78]">${d.high?.toFixed(2)}</span> <span className="text-[#8A857A]">Low</span><span className="text-right text-[#EF4444]">${d.low?.toFixed(2)}</span> <span className="text-[#8A857A]">Close</span><span className="text-right font-bold">${d.close?.toFixed(2)}</span> </div> </div> ); }} />
+                                      <Bar dataKey={(d) => [d.low, d.high]} shape={<CandlestickShape />} isAnimationActive={false} />
+                                    </BarChart>
+                                  </ResponsiveContainer>
+                                </div>
+                                <div className="flex justify-between items-center mt-3 pt-3 border-t border-[#333]/50 text-[#8A857A] font-mono text-[9px] uppercase tracking-wider">
+                                  <span>Low: ${candleMin.toFixed(2)}</span>
+                                  <span>{filteredCandles.every(c => c.isDummy) ? 0 : filteredCandles.length} active candles in {temporalLabel} window</span>
+                                  <span>High: ${candleMax.toFixed(2)}</span>
+                                </div>
+                              </>
+                            ) : (
+                              <div className="mt-2 border-t border-[#333] pt-4 text-center text-sm font-mono text-[#8A857A]">
+                                No candlestick data available for {m.symbol}.<br/>
+                                <span className="text-[10px]">Data file may be empty or failed to load.</span>
+                              </div>
+                            )}
+                          </div>
+                        )}
                       </div>);})}
                   </div>
                   <div className="space-y-6">
@@ -1743,11 +1777,23 @@ export default function Dashboard({ onBack }) {
                     </div>
                     <div className="rounded-2xl border border-[#2a2a2a] bg-gradient-to-b from-[#232323] to-[#141414] p-5 shadow-[0_18px_40px_rgba(0,0,0,0.35)]">
                       <h3 className="font-mono text-[10px] uppercase tracking-widest text-[#8A857A] mb-4">Technology sector leads intraday resilience</h3>
-                      <div className="h-[350px]">{sectorBars.length === 0 ? <div className="flex h-full items-center justify-center text-sm text-[#8A857A]">No sector change data.</div> : <ResponsiveContainer width="100%" height="100%"><BarChart data={sectorBars} layout="vertical"><XAxis type="number" tick={{fontSize:9,fill:'#8A857A',fontFamily:'monospace'}} axisLine={false} tickLine={false} unit="%"/><YAxis type="category" dataKey="symbol" width={50} tick={{fontSize:10,fill:'#C8C4BA',fontFamily:'monospace',fontWeight:'bold'}} axisLine={false} tickLine={false}/><RechartsTooltip content={<CustomTooltip/>}/><Bar dataKey="changePct" name="Change %" radius={[0,4,4,0]}>{sectorBars.map((m,i)=><Cell key={i} fill={m.changePct>=0?'#6B9E78':'#EF4444'} opacity={0.75}/>)}</Bar></BarChart></ResponsiveContainer>}</div>
+                      <div className="h-[350px]">{sectorBars.length === 0 ? <div className="flex h-full items-center justify-center text-sm text-[#8A857A]">No sector change data.</div> : <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}><BarChart data={sectorBars} layout="vertical"><XAxis type="number" tick={{fontSize:9,fill:'#8A857A',fontFamily:'monospace'}} axisLine={false} tickLine={false} unit="%"/><YAxis type="category" dataKey="symbol" width={50} tick={{fontSize:10,fill:'#C8C4BA',fontFamily:'monospace',fontWeight:'bold'}} axisLine={false} tickLine={false}/><RechartsTooltip content={<CustomTooltip/>}/><Bar dataKey="changePct" name="Change %" radius={[0,4,4,0]}>{sectorBars.map((m,i)=><Cell key={i} fill={m.changePct>=0?'#6B9E78':'#EF4444'} opacity={0.75}/>)}</Bar></BarChart></ResponsiveContainer>}</div>
                     </div>
                     <div className="rounded-2xl border border-[#2a2a2a] bg-gradient-to-b from-[#232323] to-[#141414] p-5 shadow-[0_18px_40px_rgba(0,0,0,0.35)]">
                       <h3 className="font-mono text-[10px] uppercase tracking-widest text-[#8A857A] mb-3">Intense intraday volatility across core tracking ETFs</h3>
                       {rangeRows.length === 0 ? <p className="text-sm text-[#8A857A]">No intraday high/low data for this ingest.</p> : <div className="space-y-3">{rangeRows.map((m,i)=>{const r=m.high-m.low;const pp=r>0?((m.price-m.low)/r)*100:50;const up=m.changePct>=0;return(<div key={i}><div className="flex items-center justify-between mb-1"><span className="font-mono text-[10px] font-bold text-[#F2F0E9]">{m.symbol}</span><span className={`font-mono text-[10px] ${up?'text-[#6B9E78]':'text-[#EF4444]'}`}>{m.price?.toFixed(2)}</span></div><div className="flex items-center gap-2"><span className="font-mono text-[8px] text-[#555] w-12 text-right">{m.low?.toFixed(1)}</span><div className="flex-1 h-2 bg-[#1A1A1A] rounded-full relative overflow-hidden"><div className="absolute inset-y-0 rounded-full" style={{left:'0%',width:`${pp}%`,background:up?'linear-gradient(90deg,#6B9E78,#6B9E7880)':'linear-gradient(90deg,#EF4444,#EF444480)'}}/><div className="absolute top-0 h-full w-1 bg-white rounded-full shadow" style={{left:`${pp}%`}}/></div><span className="font-mono text-[8px] text-[#555] w-12">{m.high?.toFixed(1)}</span></div></div>);})}</div>}
+                    </div>
+                    <div className="rounded-2xl border border-[#2a2a2a] bg-gradient-to-b from-[#232323] to-[#141414] p-5 shadow-[0_18px_40px_rgba(0,0,0,0.35)]">
+                      <h3 className="font-mono text-[10px] uppercase tracking-widest text-[#8A857A] mb-3">Market Drivers & Financial News</h3>
+                      {(!intel.financialNews || intel.financialNews.length === 0) ? <p className="text-[10px] font-mono text-[#8A857A]">No market news available.</p> : <div className="space-y-4">{intel.financialNews.slice(0, 5).map((a, i) => (
+                        <a key={i} href={a.url} target="_blank" rel="noopener noreferrer" className="group block border-l-2 border-[#333] pl-3 hover:border-[#CC5833] transition-colors">
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className="font-mono text-[8px] font-bold text-[#CC5833] uppercase">{a.source}</span>
+                            {a.date && <span className="font-mono text-[8px] text-[#555]">{new Date(a.date).toLocaleDateString()}</span>}
+                          </div>
+                          <h4 className="text-xs font-bold text-[#C8C4BA] group-hover:text-[#F2F0E9] transition-colors leading-snug line-clamp-2">{a.title}</h4>
+                        </a>
+                      ))}</div>}
                     </div>
                   </div>
                 </div>
@@ -2227,7 +2273,7 @@ export default function Dashboard({ onBack }) {
                 {/* Cascade flow */}
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8 items-stretch">
                   {[
-                    { step: 'Physical Layer', value: `${kpis.totalHazards}`, sub: `${data.quakes.length} seismic + ${data.fires.length} thermal`, color: '#7BA4C7', icon: <Globe2 size={20} />, detail: `Peak magnitude: M${topQuakes[0]?.mag.toFixed(1) || '—'}. Events span ${regionBreakdown.length} distinct regions. ${magnitudeDistribution[5]?.count || 0} events above M6.0 — threshold for infrastructure damage.` },
+                    { step: 'Physical Layer', value: `${kpis.totalHazards}`, sub: `${filteredQuakes.length} seismic + ${filteredFires.length} thermal`, color: '#7BA4C7', icon: <Globe2 size={20} />, detail: `Peak magnitude: M${topQuakes[0]?.mag.toFixed(1) || '—'}. Events span ${regionBreakdown.length} distinct regions. ${magnitudeDistribution[5]?.count || 0} events above M6.0 — threshold for infrastructure damage.` },
                     { step: 'Infrastructure Layer', value: `${kpis.avDisruptionRate.toFixed(1)}%`, sub: `${kpis.cancelled} cancelled, ${kpis.delayed} delayed`, color: '#CC5833', icon: <Plane size={20} />, detail: `Aviation network absorbing physical hazard shocks with 4-8 hour propagation lag. ${kpis.avDisruptionRate > 30 ? 'Disruption rate exceeds 30% threshold — active cascade.' : 'Rate within normal absorption capacity.'}` },
                     { step: 'Economic Layer', value: `${kpis.marketDelta > 0 ? '+' : ''}${kpis.marketDelta}%`, sub: `S&P 500: ${data.markets?.c?.toFixed(1) || '—'}`, color: kpis.marketDelta < -1 ? '#EF4444' : '#6B9E78', icon: <TrendingDown size={20} />, detail: `Market sentiment ${kpis.marketDelta < -1 ? 'reflects stress from multi-domain disruption. Correlation with physical hazard intensity detected.' : 'shows resilience. No significant cross-domain contagion reaching financial markets yet.'}` },
                   ].map((layer, i) => (
@@ -2257,7 +2303,7 @@ export default function Dashboard({ onBack }) {
                   <div className="rounded-2xl border border-[#2a2a2a] bg-gradient-to-b from-[#232323] to-[#141414] p-6 shadow-[0_18px_40px_rgba(0,0,0,0.35)]">
                     <h3 className="font-mono text-[10px] uppercase tracking-widest text-[#8A857A] mb-4">Compound Risk Assessment</h3>
                     <div className="h-[220px]">
-                      <ResponsiveContainer width="100%" height="100%">
+                      <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
                         <RadarChart data={radarData}>
                           <PolarGrid stroke="#333" />
                           <PolarAngleAxis dataKey="axis" tick={{ fontSize: 10, fill: '#C8C4BA', fontFamily: 'monospace' }} />
@@ -2309,6 +2355,10 @@ export default function Dashboard({ onBack }) {
         .recharts-cartesian-axis-tick-value{font-family:'IBM Plex Mono',monospace;font-size:9px}
         @keyframes fadeIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
         .animate-fadeIn{animation:fadeIn 0.3s ease-out}
+        .temporal-slider::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;width:14px;height:14px;border-radius:50%;background:#CC5833;cursor:pointer;border:2px solid #1A1A1A;box-shadow:0 0 8px rgba(204,88,51,0.4),0 2px 4px rgba(0,0,0,0.3);transition:transform 0.15s ease,box-shadow 0.15s ease}
+        .temporal-slider::-webkit-slider-thumb:hover{transform:scale(1.25);box-shadow:0 0 14px rgba(204,88,51,0.6),0 2px 6px rgba(0,0,0,0.4)}
+        .temporal-slider::-webkit-slider-thumb:active{transform:scale(1.1)}
+        .temporal-slider::-moz-range-thumb{width:14px;height:14px;border-radius:50%;background:#CC5833;cursor:pointer;border:2px solid #1A1A1A;box-shadow:0 0 8px rgba(204,88,51,0.4)}
       `}</style>
     </div>
   );

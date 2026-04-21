@@ -516,7 +516,7 @@ export default function CountryDossier({ country, quakes, fires, flights, hubs, 
                 <div>
                   <h4 className="font-mono text-[9px] uppercase tracking-widest text-[#8A857A] mb-2">Seismic Events &mdash; Magnitude Distribution</h4>
                   <div className="h-[140px]">
-                    <ResponsiveContainer width="100%" height="100%">
+                    <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
                       <BarChart data={magChart}>
                         <XAxis dataKey="range" tick={{ fontSize: 9, fill: '#8A857A', fontFamily: 'monospace' }} axisLine={false} tickLine={false} />
                         <YAxis tick={{ fontSize: 9, fill: '#8A857A', fontFamily: 'monospace' }} axisLine={false} tickLine={false} width={25} />
