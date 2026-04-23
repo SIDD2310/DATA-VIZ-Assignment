@@ -308,19 +308,22 @@ const GlobalTooltip = ({ children, text, position = 'top', disabled = false, wra
 
 const CandlestickShape = (props) => {
   const { x, y, width, height, payload } = props;
+  if (!payload || typeof payload.open !== 'number' || typeof payload.close !== 'number' || typeof payload.high !== 'number' || typeof payload.low !== 'number') return null;
+  if (width == null || height == null || width <= 0 || height <= 0 || isNaN(x) || isNaN(y)) return null;
+
   const isUp = payload.close >= payload.open;
   const color = isUp ? '#6B9E78' : '#EF4444';
 
   const totalRange = payload.high - payload.low;
-  if (totalRange === 0) {
-    return <rect x={x} y={y} width={Math.max(width * 0.6, 4)} height={2} fill={color} />;
+  if (totalRange === 0 || isNaN(totalRange)) {
+    return <rect x={x || 0} y={y || 0} width={Math.max((width || 0) * 0.6, 4)} height={2} fill={color} />;
   }
 
   const bodyTop = Math.max(payload.open, payload.close);
   const bodyBottom = Math.min(payload.open, payload.close);
   
   const bodyTopY = y + ((payload.high - bodyTop) / totalRange) * height;
-  const bodyHeight = ((bodyTop - bodyBottom) / totalRange) * height;
+  const bodyHeight = Math.max(((bodyTop - bodyBottom) / totalRange) * height, 1); // Ensure minimum height of 1 for visibility
 
   const barWidth = Math.max(width * 0.6, 4);
   const barX = x + (width - barWidth) / 2;
@@ -360,7 +363,6 @@ const PAGES = [
   { id: 'polymarket', number: '06', icon: <Eye className="shrink-0" size={18} />, label: 'Prediction Markets', tooltip: 'Geopolitical event probabilities via Polymarket' },
   { id: 'energy', number: '07', icon: <Fuel className="shrink-0" size={18} />, label: 'Energy Complex', tooltip: 'U.S. DOE/EIA weekly inventory and supply telemetry' },
   { id: 'supply', number: '08', icon: <Anchor className="shrink-0" size={18} />, label: 'Supply Chain', tooltip: 'Maritime chokepoint risk and transit clustering' },
-  { id: 'news', number: '09', icon: <Newspaper className="shrink-0" size={18} />, label: 'World News', tooltip: 'Live GNews headlines filtered for geopolitical impact' },
   { id: 'climate', number: '10', icon: <CloudRain className="shrink-0" size={18} />, label: 'Climate & Aviation', tooltip: 'Atmospheric anomalies and flight stress modeling' },
   { id: 'cascade', number: '11', icon: <Network className="shrink-0" size={18} />, label: 'Cascade Analysis', tooltip: 'Probabilistic modeling of systemic fallout triggers' },
 ];
@@ -441,7 +443,6 @@ export default function Dashboard({ onBack }) {
   const [activePage, setActivePage] = useState('situation');
   const [selectedCountry, setSelectedCountry] = useState(null);
   const [hoveredGlobeCountry, setHoveredGlobeCountry] = useState(null);
-  const [worldNews, setWorldNews] = useState([]);
   const [intel, setIntel] = useState({
     commodities: [], fx: [], polymarket: [], energyTape: [], energyStorage: [], eiaNote: null,
     chokepoints: [], airlineOps: [], minerals: [], shipping: [],
@@ -544,6 +545,10 @@ export default function Dashboard({ onBack }) {
     return () => clearInterval(interval);
   }, [isTemporalPlaying]);
 
+  // Simulated routes (used by map drilldowns + infrastructure KPI)
+  const flightArcs = useMemo(() => generateFlightArcs(), []);
+  const maritimeArcs = useMemo(() => generateMaritimeArcs(), []);
+
   useEffect(() => {
     let isMounted = true;
     const ingest = async () => {
@@ -570,6 +575,13 @@ export default function Dashboard({ onBack }) {
       const flightRes = await fetchReal(`https://api.aviationstack.com/v1/flights?access_key=${KEYS.aviation}&flight_status=scheduled`, 'json', 'Aviationstack Flights');
       const aviationData = flightRes?.data || [];
       console.log(`  → ${aviationData.length} flights received`);
+
+      // NOTE: The UI’s disruption KPI + country drilldowns run on the simulated flight arcs (`flightArcs`).
+      // To keep Airline Ops consistent with that same dataset, derive a hub-level ops feed from `flightArcs`.
+      const aviationForOps = (flightArcs || []).map((f) => ({
+        departure: { iata: f.from },
+        flight_status: f.status,
+      }));
 
       // 4. NASA FIRMS Fire Data
       // Always fetch 3-day window for FIRMS (max available for NRT)
@@ -615,7 +627,7 @@ export default function Dashboard({ onBack }) {
       const intelPanels = await fetchIntelPanels({
         quakes: parsedQuakes,
         fires: parsedFires,
-        aviation: aviationData,
+        aviation: aviationForOps,
         finnhubToken,
         gnewsKey,
         eiaKey,
@@ -632,42 +644,16 @@ export default function Dashboard({ onBack }) {
     };
     ingest();
     return () => { isMounted = false; };
-  }, []); // fetch once — temporal scrubber filters client-side
+  }, [flightArcs]); // fetch once (flightArcs is stable); temporal scrubber filters client-side
 
-
-
-  useEffect(() => {
-    (async () => {
-      const fallbackWorldNews = [
-        { source: 'Reuters', title: 'Major seismic event triggers widespread port closures along Pacific Rim', description: 'Emergency protocols activated as regional authorities assess infrastructure damage and supply chain disruptions.', url: '#', date: new Date().toISOString() },
-        { source: 'Bloomberg', title: 'Global shipping rates surge 15% amid sudden routing changes', description: 'Logistics operators scramble to secure alternative routes following unpredictable chokepoint closures.', url: '#', date: new Date(Date.now() - 3600000).toISOString() },
-        { source: 'Financial Times', title: 'Commodity markets experience high volatility in morning trading', description: 'Energy and agricultural futures swing wildly as traders digest overnight hazard reports.', url: '#', date: new Date(Date.now() - 7200000).toISOString() },
-        { source: 'AP News', title: 'Unprecedented thermal anomalies detected near crucial transit corridors', description: 'Satellite imagery confirms rapidly expanding fire lines threatening major terrestrial trade routes.', url: '#', date: new Date(Date.now() - 14400000).toISOString() }
-      ];
-
-      const gnewsKey = import.meta.env?.VITE_GNEWS_API_KEY || KEYS.gnews;
-      if (!gnewsKey) {
-        setWorldNews(fallbackWorldNews);
-        return;
-      }
-      try {
-        const res = await fetch(`https://gnews.io/api/v4/top-headlines?lang=en&max=12&apikey=${encodeURIComponent(gnewsKey)}`);
-        if (!res.ok) throw new Error();
-        const d = await res.json();
-        if (!d.articles || d.articles.length === 0) throw new Error();
-        setWorldNews((d.articles || []).map(a => ({ title: a.title, description: a.description?.slice(0, 160) || '', source: a.source?.name || 'Unknown', url: a.url, date: a.publishedAt, image: a.image })));
-      } catch {
-        setWorldNews(fallbackWorldNews);
-      }
-    })();
-  }, []);
 
   // --- Load pre-fetched market candles ---
   useEffect(() => {
     let isMounted = true;
     const fetchLocalCandles = async () => {
       try {
-        const res = await fetch(`/market-candles.json?t=${Date.now()}`);
+        const baseUrl = import.meta.env.BASE_URL || '/';
+        const res = await fetch(`${baseUrl}market-candles.json?t=${Date.now()}`);
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const json = await res.json();
         
@@ -691,9 +677,6 @@ export default function Dashboard({ onBack }) {
       clearInterval(interval);
     };
   }, []);
-
-  const flightArcs = useMemo(() => generateFlightArcs(), []);
-  const maritimeArcs = useMemo(() => generateMaritimeArcs(), []);
 
   const mapChokepoints = useMemo(() => {
     const riskByName = Object.fromEntries((intel.chokepoints || []).map((c) => [c.name, c.risk]));
@@ -823,15 +806,17 @@ export default function Dashboard({ onBack }) {
 
   const kpis = useMemo(() => {
     const totalHazards = filteredQuakes.length + filteredFires.length;
-    const cancelled = data.aviation.filter(f => f.flight_status === 'cancelled').length;
-    const delayed = data.aviation.filter(f => f.flight_status === 'delayed').length;
-    const avDisruptionRate = data.aviation.length ? ((cancelled + delayed) / data.aviation.length) * 100 : 0;
+    // Use the same dataset as the geospatial map/country drilldown (simulated flight arcs).
+    // The live Aviationstack pull is filtered to scheduled flights and frequently yields 0 disruptions.
+    const cancelled = flightArcs.filter((f) => f.status === 'cancelled').length;
+    const delayed = flightArcs.filter((f) => f.status === 'delayed').length;
+    const avDisruptionRate = flightArcs.length ? ((cancelled + delayed) / flightArcs.length) * 100 : 0;
     let riskIndex = 20;
     if (data.markets?.dp < -1) riskIndex += 20;
     if (filteredQuakes.some(q => q.mag > 6.0)) riskIndex += 30;
     if (avDisruptionRate > 30) riskIndex += 30;
     return { riskIndex, totalHazards, avDisruptionRate, marketDelta: data.markets?.dp || 0, cancelled, delayed };
-  }, [filteredQuakes, filteredFires, data.aviation, data.markets]);
+  }, [filteredQuakes, filteredFires, flightArcs, data.markets]);
 
   const correlationData = useMemo(() => [
     { time: '12h ago', hazards: 40, delays: 15 }, { time: '10h ago', hazards: 55, delays: 20 },
@@ -849,8 +834,8 @@ export default function Dashboard({ onBack }) {
   const domainPieData = useMemo(() => [
     { name: 'Seismic', value: filteredQuakes.length, color: THEME.blue },
     { name: 'Thermal', value: filteredFires.length, color: THEME.accent },
-    { name: 'Aviation', value: data.aviation.length, color: THEME.flight },
-  ], [filteredQuakes, filteredFires, data.aviation]);
+    { name: 'Aviation', value: flightArcs.length, color: THEME.flight },
+  ], [filteredQuakes, filteredFires, flightArcs.length]);
 
   const radarData = useMemo(() => [
     { axis: 'Seismic', value: Math.min(100, filteredQuakes.length / 2) },
@@ -1037,7 +1022,7 @@ export default function Dashboard({ onBack }) {
     const weatherAlertCount = mapClimateZones.filter((z) => z.severity === 'EXTREME').length;
     return [
       { key: 'intelHotspots', label: 'Intel Hotspots', count: globeCountryStats.top.length, possible: true, color: '#CC5833', tooltip: 'Global hotspots based on aggregate stress' },
-      { key: 'flights', label: 'Aviation', count: data.aviation.length, possible: true, color: THEME.flight, tooltip: 'Comprehensive world aviation traffic and delay telemetry' },
+      { key: 'flights', label: 'Aviation', count: flightArcs.length, possible: true, color: THEME.flight, tooltip: 'Global aviation routes (simulation; powers country drilldowns)' },
       { key: 'maritime', label: 'Maritime Vessels', count: maritimeArcs.length, possible: true, color: '#38BDB2', tooltip: 'Major cargo ship transit routes through chokepoints' },
       { key: 'climate', label: 'Climate Anomalies', count: mapClimateZones.length, possible: true, color: THEME.green, tooltip: 'Ozone, temperature, and atmospheric stress indices' },
       { key: 'weatherAlerts', label: 'Weather Alerts', count: weatherAlertCount, possible: true, color: '#FACC15', tooltip: 'Severe weather systems and metabolic stress alerts' },
@@ -1045,7 +1030,7 @@ export default function Dashboard({ onBack }) {
       { key: 'thermal', label: 'Fires', count: filteredFires.length, possible: true, color: THEME.accent, tooltip: 'Global heat anomaly clustering (FIRMS/MODIS datasets)' },
       { key: 'chokepoints', label: 'Chokepoints', count: mapChokepoints.length, possible: true, color: '#F59E0B', tooltip: 'Real-time transit risk at global maritime bottlenecks' },
     ];
-  }, [globeCountryStats.top, mapClimateZones, mapChokepoints, data.aviation.length, filteredQuakes.length, filteredFires.length, maritimeArcs.length]);
+  }, [globeCountryStats.top, mapClimateZones, mapChokepoints, flightArcs.length, filteredQuakes.length, filteredFires.length, maritimeArcs.length]);
 
   const activeMapLayersText = useMemo(() => {
     const names = layerControls
@@ -2191,43 +2176,6 @@ export default function Dashboard({ onBack }) {
               </div>
               );
             })()}
-
-            {/* PAGE 9: WORLD NEWS */}
-            {activePage === 'news' && (
-              <div className="p-6 max-w-[1600px] mx-auto animate-fadeIn overflow-y-auto custom-scrollbar" style={{maxHeight:'calc(100vh - 100px)'}}>
-                <PageHeader
-                  title="World news"
-                  subtitle="Financial and tech headlines via GNews when configured; world headlines from the live feed when available."
-                />
-                <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-                  <div>
-                    <h3 className="font-mono text-[10px] uppercase tracking-widest text-[#8A857A] mb-3 flex items-center gap-2">Financial <span className="px-2 py-0.5 rounded bg-[#6B9E78]/15 text-[#6B9E78] text-[8px] font-bold uppercase border border-[#6B9E78]/20">GNews</span> <span className="font-mono text-[9px] text-[#555]">{intel.financialNews.length}</span></h3>
-                    <div className="space-y-2">
-                      {intel.financialNews.length===0&&<EmptyState>No business headlines. Set <code className="text-[#CC5833]">VITE_GNEWS_API_KEY</code> (gnews.io).</EmptyState>}
-                      {intel.financialNews.map((n,i)=>(<div key={i} className="rounded-xl border border-[#2a2a2a] bg-gradient-to-b from-[#232323] to-[#141414] p-4 shadow-[0_8px_24px_rgba(0,0,0,0.2)] transition-all hover:border-[#CC5833]/25">
-                        <div className="flex items-center gap-2 mb-2 flex-wrap"><span className="font-mono text-[9px] font-bold text-[#CC5833] uppercase">{n.source}</span>{n.tags.map((t,j)=><TagBadge key={j} tag={t}/>)}</div>
-                        {n.url ? <a href={n.url} target="_blank" rel="noopener noreferrer" className="text-sm font-bold text-[#F2F0E9] leading-snug hover:text-[#CC5833]">{n.title}</a> : <h4 className="text-sm font-bold text-[#F2F0E9] leading-snug">{n.title}</h4>}
-                        <span className="font-mono text-[8px] text-[#555] mt-1.5 block">{n.time}</span>
-                      </div>))}
-                    </div>
-                  </div>
-                  <div>
-                    <h3 className="font-mono text-[10px] uppercase tracking-widest text-[#8A857A] mb-3 flex items-center gap-2">AI/ML <span className="px-2 py-0.5 rounded bg-[#6B9E78]/15 text-[#6B9E78] text-[8px] font-bold uppercase border border-[#6B9E78]/20">GNews</span> <span className="font-mono text-[9px] text-[#555]">{intel.aiNews.length}</span></h3>
-                    <div className="space-y-2">
-                      {intel.aiNews.length===0&&<EmptyState>No technology headlines from GNews.</EmptyState>}
-                      {intel.aiNews.map((n,i)=>(<div key={i} className="rounded-xl border border-[#2a2a2a] bg-gradient-to-b from-[#232323] to-[#141414] p-4 shadow-[0_8px_24px_rgba(0,0,0,0.2)] transition-all hover:border-[#CC5833]/25">
-                        <div className="flex items-center gap-2 mb-2 flex-wrap"><span className="font-mono text-[9px] font-bold text-[#7BA4C7] uppercase">{n.source}</span>{n.tags.map((t,j)=><TagBadge key={j} tag={t}/>)}</div>
-                        {n.url ? <a href={n.url} target="_blank" rel="noopener noreferrer" className="text-sm font-bold text-[#F2F0E9] leading-snug hover:text-[#CC5833]">{n.title}</a> : <h4 className="text-sm font-bold text-[#F2F0E9] leading-snug">{n.title}</h4>}
-                        <span className="font-mono text-[8px] text-[#555] mt-1.5 block">{n.time}</span>
-                      </div>))}
-                    </div>
-                  </div>
-                </div>
-                {worldNews.length > 0 && (<div className="mt-6"><h3 className="font-mono text-[10px] uppercase tracking-widest text-[#8A857A] mb-3 flex items-center gap-2">World Headlines <span className="px-2 py-0.5 rounded bg-[#6B9E78]/15 text-[#6B9E78] text-[8px] font-bold uppercase border border-[#6B9E78]/20">Live API</span></h3>
-                  <div className="grid grid-cols-1 xl:grid-cols-2 gap-2">{worldNews.map((a,i)=>(<a key={i} href={a.url} target="_blank" rel="noopener noreferrer" className="group block rounded-xl border border-[#2a2a2a] bg-gradient-to-b from-[#232323] to-[#141414] p-4 shadow-[0_8px_24px_rgba(0,0,0,0.2)] transition-all hover:border-[#CC5833]/25"><div className="flex items-center gap-2 mb-2"><span className="font-mono text-[9px] font-bold text-[#CC5833] uppercase">{a.source}</span><TagBadge tag="ALERT"/>{a.date&&<span className="font-mono text-[8px] text-[#555]">{new Date(a.date).toLocaleString('en-US',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'})}</span>}</div><h4 className="text-sm font-bold text-[#F2F0E9] group-hover:text-[#CC5833] transition-colors leading-snug">{a.title}</h4>{a.description&&<p className="text-xs text-[#8A857A] mt-1.5 leading-relaxed">{a.description}</p>}</a>))}</div></div>)}
-              </div>
-            )}
-
             {/* PAGE 10: CLIMATE & AVIATION */}
             {activePage === 'climate' && (() => {
               const climateRows = intel.climate.filter((z) => z.temp != null && z.precip != null);
@@ -2274,7 +2222,7 @@ export default function Dashboard({ onBack }) {
                 </div>
                 <div className="rounded-2xl border border-[#2a2a2a] bg-gradient-to-b from-[#232323] to-[#141414] p-6 shadow-[0_18px_40px_rgba(0,0,0,0.35)] border-l-4 border-l-[#CC5833]">
                   <h3 className="font-mono text-[10px] uppercase tracking-widest text-[#F2F0E9]/50 mb-3">Climate-Aviation Nexus</h3>
-                  <p className="text-sm text-[#F2F0E9]/85 leading-relaxed">Airport status uses delayed/cancelled share in the live Aviationstack pull for each hub IATA. With sparse samples, many hubs may read NORMAL. {intel.airlineOps.filter(a=>a.status!=='NORMAL').length} of {intel.airlineOps.length} hubs show non-normal status in this ingest.</p>
+                  <p className="text-sm text-[#F2F0E9]/85 leading-relaxed">Airport status uses the delayed/cancelled share from the same simulated aviation routes that drive the map + Infrastructure KPI. {intel.airlineOps.filter(a=>a.status!=='NORMAL').length} of {intel.airlineOps.length} hubs show non-normal status in this ingest.</p>
                 </div>
               </div>
               );
