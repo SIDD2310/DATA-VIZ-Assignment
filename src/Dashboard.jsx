@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import {
   Activity, ArrowLeft, ArrowRight, AlertTriangle, Info,
   Plane, TrendingDown, TrendingUp, ShieldAlert, Layers,
-  Globe2, BarChart3, Network, Eye, Map as MapIcon, ChevronRight,
+  Globe2, BarChart3, Network, Eye, EyeOff, Volume2, VolumeX, Search, Map as MapIcon, ChevronRight,
   DollarSign, Gauge, Fuel, Anchor, Bitcoin, Newspaper,
   CloudRain, Clock, Play, Pause, RotateCcw
 } from 'lucide-react';
@@ -17,6 +17,7 @@ import {
 import CountryDossier from './CountryDossier';
 import { fetchIntelPanels, CHOKEPOINT_SEEDS, CLIMATE_ZONE_META } from './dashboard-intel-fetch';
 import FlatMap from './FlatMap.jsx';
+import { useAccessibility } from './AccessibilityContext.jsx';
 
 const KEYS = {
   finnhub: 'd79nie9r01qqpmhhdh9gd79nie9r01qqpmhhdha0',
@@ -54,17 +55,42 @@ const MAJOR_HUBS = [
   { code: 'JNB', lat: -26.14, lng: 28.24, country: 'South Africa' },
 ];
 
-function generateFlightArcs() {
+function mulberry32(seed) {
+  let a = seed >>> 0;
+  return function rand() {
+    a |= 0;
+    a = (a + 0x6D2B79F5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+function dailySeed(key = 'wm_sim_seed_v1') {
+  try {
+    const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+    const storageKey = `${key}:${today}`;
+    const existing = localStorage.getItem(storageKey);
+    if (existing) return Number(existing) >>> 0;
+    const seed = Math.floor(Math.random() * 2 ** 32) >>> 0;
+    localStorage.setItem(storageKey, String(seed));
+    return seed;
+  } catch {
+    return 0xC0FFEE;
+  }
+}
+
+function generateFlightArcs(rng = Math.random) {
   const arcs = [];
   const statuses = ['active', 'active', 'active', 'delayed', 'cancelled'];
   for (let i = 0; i < MAJOR_HUBS.length; i++) {
     for (let j = i + 1; j < MAJOR_HUBS.length; j++) {
-      if (Math.random() > 0.4) continue;
+      if (rng() > 0.4) continue;
       arcs.push({
         startLat: MAJOR_HUBS[i].lat, startLng: MAJOR_HUBS[i].lng,
         endLat: MAJOR_HUBS[j].lat, endLng: MAJOR_HUBS[j].lng,
         from: MAJOR_HUBS[i].code, to: MAJOR_HUBS[j].code,
-        status: statuses[Math.floor(Math.random() * statuses.length)],
+        status: statuses[Math.floor(rng() * statuses.length)],
         domain: 'AVIATION'
       });
     }
@@ -72,7 +98,7 @@ function generateFlightArcs() {
   return arcs;
 }
 
-function generateMaritimeArcs() {
+function generateMaritimeArcs(rng = Math.random) {
   const arcs = [];
   const HUBS = [
     { code: 'HMB', lat: 53.5, lng: 9.9 }, // Hamburg
@@ -84,14 +110,14 @@ function generateMaritimeArcs() {
   // Create routes connecting major shipping hubs via chokepoints
   HUBS.forEach(hub => {
     CHOKEPOINT_SEEDS.forEach(choke => {
-       if (Math.random() > 0.6) return;
-       const routeCount = Math.floor(Math.random() * 3) + 1;
+       if (rng() > 0.6) return;
+       const routeCount = Math.floor(rng() * 3) + 1;
        for (let i = 0; i < routeCount; i++) {
          arcs.push({
-            startLat: hub.lat + (Math.random() - 0.5) * 2,
-            startLng: hub.lng + (Math.random() - 0.5) * 2,
-            endLat: choke.lat + (Math.random() - 0.5) * 1.5,
-            endLng: choke.lng + (Math.random() - 0.5) * 1.5,
+            startLat: hub.lat + (rng() - 0.5) * 2,
+            startLng: hub.lng + (rng() - 0.5) * 2,
+            endLat: choke.lat + (rng() - 0.5) * 1.5,
+            endLng: choke.lng + (rng() - 0.5) * 1.5,
             from: hub.code, to: choke.name,
             status: 'active',
             domain: 'MARITIME'
@@ -103,13 +129,13 @@ function generateMaritimeArcs() {
   // Chokepoint to Chokepoint routing
   for (let i = 0; i < CHOKEPOINT_SEEDS.length; i++) {
     for (let j = i + 1; j < CHOKEPOINT_SEEDS.length; j++) {
-      if (Math.random() > 0.4) continue;
+      if (rng() > 0.4) continue;
       for (let route = 0; route < 2; route++) {
         arcs.push({
-          startLat: CHOKEPOINT_SEEDS[i].lat + (Math.random() - 0.5),
-          startLng: CHOKEPOINT_SEEDS[i].lng + (Math.random() - 0.5),
-          endLat: CHOKEPOINT_SEEDS[j].lat + (Math.random() - 0.5),
-          endLng: CHOKEPOINT_SEEDS[j].lng + (Math.random() - 0.5),
+          startLat: CHOKEPOINT_SEEDS[i].lat + (rng() - 0.5),
+          startLng: CHOKEPOINT_SEEDS[i].lng + (rng() - 0.5),
+          endLat: CHOKEPOINT_SEEDS[j].lat + (rng() - 0.5),
+          endLng: CHOKEPOINT_SEEDS[j].lng + (rng() - 0.5),
           from: CHOKEPOINT_SEEDS[i].name, to: CHOKEPOINT_SEEDS[j].name,
           status: 'active',
           domain: 'MARITIME'
@@ -439,6 +465,15 @@ export default function Dashboard({ onBack }) {
     maritime: true,
     countryHeat: true,
   });
+
+  const {
+    isColorblindMode,
+    isNarratorMode,
+    isMagnifierMode,
+    toggleColorblindMode,
+    toggleNarratorMode,
+    toggleMagnifierMode,
+  } = useAccessibility();
   const [geoData, setGeoData] = useState([]);
   const [activePage, setActivePage] = useState('situation');
   const [selectedCountry, setSelectedCountry] = useState(null);
@@ -545,9 +580,24 @@ export default function Dashboard({ onBack }) {
     return () => clearInterval(interval);
   }, [isTemporalPlaying]);
 
+  const simSeed = useMemo(() => dailySeed(), []);
+  const ingestAnchor = useMemo(() => {
+    // Keeps "now" stable for this tab session so simulated timestamps don't drift.
+    try {
+      const k = 'wm_ingest_anchor_v1';
+      const existing = sessionStorage.getItem(k);
+      if (existing) return Number(existing);
+      const now = Date.now();
+      sessionStorage.setItem(k, String(now));
+      return now;
+    } catch {
+      return Date.now();
+    }
+  }, []);
+
   // Simulated routes (used by map drilldowns + infrastructure KPI)
-  const flightArcs = useMemo(() => generateFlightArcs(), []);
-  const maritimeArcs = useMemo(() => generateMaritimeArcs(), []);
+  const flightArcs = useMemo(() => generateFlightArcs(mulberry32(simSeed)), [simSeed]);
+  const maritimeArcs = useMemo(() => generateMaritimeArcs(mulberry32(simSeed ^ 0x9E3779B9)), [simSeed]);
 
   useEffect(() => {
     let isMounted = true;
@@ -588,7 +638,17 @@ export default function Dashboard({ onBack }) {
       const firmsCsv = await fetchReal(`https://firms.modaps.eosdis.nasa.gov/api/area/csv/${KEYS.firms}/VIIRS_SNPP_NRT/world/3`, 'csv', 'NASA FIRMS');
       const parsedFires = firmsCsv ? firmsCsv.split('\n').slice(1).map((line, idx) => {
         const p = line.split(','); if (p.length < 4) return null;
-        return { id: `fire-${idx}`, domain: 'FIRE', lat: parseFloat(p[0]), lng: parseFloat(p[1]), mag: parseFloat(p[2]) / 80, place: `Thermal GEO-${Math.abs(Math.floor(parseFloat(p[0])))}`, time: Date.now() - (Math.random() * 86400000), confidence: p[3] };
+        const r = mulberry32((simSeed + idx) >>> 0)();
+        return {
+          id: `fire-${idx}`,
+          domain: 'FIRE',
+          lat: parseFloat(p[0]),
+          lng: parseFloat(p[1]),
+          mag: parseFloat(p[2]) / 80,
+          place: `Thermal GEO-${Math.abs(Math.floor(parseFloat(p[0])))}`,
+          time: ingestAnchor - (r * 86400000),
+          confidence: p[3]
+        };
       }).filter(Boolean) : [];
       console.log(`  → ${parsedFires.length} fire hotspots parsed`);
 
@@ -644,7 +704,7 @@ export default function Dashboard({ onBack }) {
     };
     ingest();
     return () => { isMounted = false; };
-  }, [flightArcs]); // fetch once (flightArcs is stable); temporal scrubber filters client-side
+  }, [flightArcs, ingestAnchor, simSeed]); // stable simulated inputs; temporal scrubber filters client-side
 
 
   // --- Load pre-fetched market candles ---
@@ -1265,6 +1325,55 @@ export default function Dashboard({ onBack }) {
               <Clock size={12} className="text-[#CC5833]" />
               <span className="font-mono text-[10px] font-bold text-[#CC5833] tabular-nums">{temporalLabel}</span>
               <span className="font-mono text-[8px] text-[#8A857A] uppercase">{isTemporalPlaying ? 'playing' : 'window'}</span>
+            </div>
+
+            <div className="h-5 w-px bg-[#2a2a2a] mx-1" />
+
+            <div className="flex items-center gap-1.5">
+              <GlobalTooltip text={isColorblindMode ? 'Colorblind filter: ON' : 'Colorblind filter: OFF'} position="bottom">
+                <button
+                  type="button"
+                  onClick={toggleColorblindMode}
+                  className={`p-2.5 rounded-xl transition-all border ${
+                    isColorblindMode
+                      ? 'border-[#CC5833]/40 text-[#CC5833] bg-[#CC5833]/10'
+                      : 'border-[#2a2a2a] text-[#8A857A] hover:text-[#CC5833] hover:border-[#CC5833]/30 hover:bg-[#2A2A28]'
+                  }`}
+                  aria-label="Toggle Colorblind Mode"
+                >
+                  {isColorblindMode ? <EyeOff size={16} /> : <Eye size={16} />}
+                </button>
+              </GlobalTooltip>
+
+              <GlobalTooltip text={isNarratorMode ? 'Narrator: ON' : 'Narrator: OFF'} position="bottom">
+                <button
+                  type="button"
+                  onClick={toggleNarratorMode}
+                  className={`p-2.5 rounded-xl transition-all border ${
+                    isNarratorMode
+                      ? 'border-[#CC5833]/40 text-[#CC5833] bg-[#CC5833]/10'
+                      : 'border-[#2a2a2a] text-[#8A857A] hover:text-[#CC5833] hover:border-[#CC5833]/30 hover:bg-[#2A2A28]'
+                  }`}
+                  aria-label="Toggle Narrator Mode"
+                >
+                  {isNarratorMode ? <Volume2 size={16} /> : <VolumeX size={16} />}
+                </button>
+              </GlobalTooltip>
+
+              <GlobalTooltip text={isMagnifierMode ? 'Magnifier: ON' : 'Magnifier: OFF'} position="bottom">
+                <button
+                  type="button"
+                  onClick={toggleMagnifierMode}
+                  className={`p-2.5 rounded-xl transition-all border ${
+                    isMagnifierMode
+                      ? 'border-[#CC5833]/40 text-[#CC5833] bg-[#CC5833]/10'
+                      : 'border-[#2a2a2a] text-[#8A857A] hover:text-[#CC5833] hover:border-[#CC5833]/30 hover:bg-[#2A2A28]'
+                  }`}
+                  aria-label="Toggle Magnifier Mode"
+                >
+                  <Search size={16} />
+                </button>
+              </GlobalTooltip>
             </div>
 
             <GlobalTooltip text="Next Intelligence Domain" position="bottom">
