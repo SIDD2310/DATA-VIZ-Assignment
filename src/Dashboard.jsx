@@ -474,6 +474,13 @@ export default function Dashboard({ onBack }) {
     toggleNarratorMode,
     toggleMagnifierMode,
   } = useAccessibility();
+
+  const normalizeNewsUrl = useCallback((a) => {
+    const raw = (a?.url || '').trim();
+    if (raw && raw !== '#' && /^https?:\/\//i.test(raw)) return raw;
+    const q = encodeURIComponent(`${a?.title || ''} ${a?.source || ''}`.trim());
+    return `https://news.google.com/search?q=${q}&hl=en-US&gl=US&ceid=US:en`;
+  }, []);
   const [geoData, setGeoData] = useState([]);
   const [activePage, setActivePage] = useState('situation');
   const [selectedCountry, setSelectedCountry] = useState(null);
@@ -1898,7 +1905,7 @@ export default function Dashboard({ onBack }) {
                     <div className="rounded-2xl border border-[#2a2a2a] bg-gradient-to-b from-[#232323] to-[#141414] p-5 shadow-[0_18px_40px_rgba(0,0,0,0.35)]">
                       <h3 className="font-mono text-[10px] uppercase tracking-widest text-[#8A857A] mb-3">Market Drivers & Financial News</h3>
                       {(!intel.financialNews || intel.financialNews.length === 0) ? <p className="text-[10px] font-mono text-[#8A857A]">No market news available.</p> : <div className="space-y-4">{intel.financialNews.slice(0, 5).map((a, i) => (
-                        <a key={i} href={a.url} target="_blank" rel="noopener noreferrer" className="group block border-l-2 border-[#333] pl-3 hover:border-[#CC5833] transition-colors">
+                        <a key={i} href={normalizeNewsUrl(a)} target="_blank" rel="noopener noreferrer" className="group block border-l-2 border-[#333] pl-3 hover:border-[#CC5833] transition-colors">
                           <div className="flex items-center gap-2 mb-1">
                             <span className="font-mono text-[8px] font-bold text-[#CC5833] uppercase">{a.source}</span>
                             {a.date && <span className="font-mono text-[8px] text-[#555]">{new Date(a.date).toLocaleDateString()}</span>}
