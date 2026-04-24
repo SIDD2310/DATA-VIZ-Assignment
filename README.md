@@ -10,7 +10,8 @@ GlobalSentinel is a cinematic, highly-interactive intelligence dashboard built t
 
 ### 🎬 Platform Demonstration
 
-![GlobalSentinel Platform Demo](Final-DataViz.mp4)
+<video src="Final-DataViz.mp4" width="100%" controls></video>
+
 
 Built with **React, Three.js, Recharts, and MapboxGL/Maplibre**, the application pushes the boundaries of dense data visualization and frontend performance.
 
