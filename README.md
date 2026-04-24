@@ -88,8 +88,11 @@ To enable live news and aviation tracking, add the following to a `.env` file at
 VITE_GNEWS_API_KEY=your_key_here
 VITE_AVIATIONSTACK_KEY=your_key_here
 ```
+<<<<<<< HEAD
 
 *(Note: If API limits are reached, the application will automatically failover to highly realistic fallback data to ensure uninterrupted presentation).*
+=======
+>>>>>>> c9a1b7b9d2a6cc901d9c89d80eb2e118dd5ba2c2
 
 ---
 
