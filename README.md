@@ -10,7 +10,7 @@ GlobalSentinel is a cinematic, highly-interactive intelligence dashboard built t
 
 ### 🎬 Platform Demonstration
 
-<video src="Final-DataViz.mp4" width="600" height="300" controls></video>
+[<video src="Final-DataViz.mp4" width="600" height="300" controls></video>](https://github.com/user-attachments/assets/3037dc2d-be36-4a61-9af4-c224c6212a55)
 
 
 
