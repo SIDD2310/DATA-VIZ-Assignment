@@ -12,6 +12,23 @@ Built with **React, Three.js, Recharts, and MapboxGL/Maplibre**, the application
 
 ---
 
+## 🏗️ Project Structure
+
+| Path | Description |
+| :--- | :--- |
+| `src/` | Core React application source code, including component logic and state management. |
+| `src/App.jsx` | Main application entry point and layout definition. |
+| `src/Dashboard.jsx` | The primary intelligence hub, coordinating real-time telemetry and temporal synchronization. |
+| `src/FlatMap.jsx` | Custom 2D geospatial engine featuring the dynamic solar terminator curve. |
+| `public/` | Static assets, including high-resolution textures and the `market-candles.json` fallback dataset. |
+| `scripts/` | Python utility scripts for backend data procurement and processing. |
+| `dist/` | Production-ready distribution files (generated via `npm run build`). |
+| `docker/` | Configuration for containerized deployment environments. |
+| `.github/` | Automated CI/CD pipelines and repository actions. |
+| `.husky/` | Git hooks for enforcing pre-commit code quality standards. |
+
+---
+
 ## ✨ Core Features
 
 ### ⏱️ The Temporal Scrubber
@@ -50,23 +67,6 @@ The application is split into specialized analytical views:
 - **Data Visualization**: Recharts (Composed Charts, Radar, Candlesticks)
 - **Geospatial Processing**: Three.js, D3-Geo mathematical projections
 - **Data Ingestion**: Python (`yfinance`, `pandas`) for robust historical market generation.
-
----
-
-## 🏗️ Project Structure
-
-| Path | Description |
-| :--- | :--- |
-| `src/` | Core React application source code, including component logic and state management. |
-| `src/App.jsx` | Main application entry point and layout definition. |
-| `src/Dashboard.jsx` | The primary intelligence hub, coordinating real-time telemetry and temporal synchronization. |
-| `src/FlatMap.jsx` | Custom 2D geospatial engine featuring the dynamic solar terminator curve. |
-| `public/` | Static assets, including high-resolution textures and the `market-candles.json` fallback dataset. |
-| `scripts/` | Python utility scripts for backend data procurement and processing. |
-| `dist/` | Production-ready distribution files (generated via `npm run build`). |
-| `docker/` | Configuration for containerized deployment environments. |
-| `.github/` | Automated CI/CD pipelines and repository actions. |
-| `.husky/` | Git hooks for enforcing pre-commit code quality standards. |
 
 ---
 
@@ -125,4 +125,4 @@ VITE_AVIATIONSTACK_KEY=your_key_here
 
 ## 📜 License
 
-This project is proprietary and intended for demonstration of advanced data visualization architectures.
+This project is proprietary and intended for demonstration of advanced data visualization architectures.
