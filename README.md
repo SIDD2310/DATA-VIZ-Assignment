@@ -8,7 +8,12 @@
 
 GlobalSentinel is a cinematic, highly-interactive intelligence dashboard built to visualize the intersection of **physical hazards, global logistics, and market volatility**. Designed for risk analysts, the platform correlates massive global datasets in real-time, allowing users to scrub backwards through time to analyze how natural disasters impact supply chains and trigger subsequent market reactions.
 
+### 🎬 Platform Demonstration
+
+![GlobalSentinel Platform Demo](Final-DataViz.mp4)
+
 Built with **React, Three.js, Recharts, and MapboxGL/Maplibre**, the application pushes the boundaries of dense data visualization and frontend performance.
+
 
 ---
 
