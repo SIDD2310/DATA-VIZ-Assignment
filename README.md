@@ -53,32 +53,62 @@ The application is split into specialized analytical views:
 
 ---
 
+## 🏗️ Project Structure
+
+| Path | Description |
+| :--- | :--- |
+| `src/` | Core React application source code, including component logic and state management. |
+| `src/App.jsx` | Main application entry point and layout definition. |
+| `src/Dashboard.jsx` | The primary intelligence hub, coordinating real-time telemetry and temporal synchronization. |
+| `src/FlatMap.jsx` | Custom 2D geospatial engine featuring the dynamic solar terminator curve. |
+| `public/` | Static assets, including high-resolution textures and the `market-candles.json` fallback dataset. |
+| `scripts/` | Python utility scripts for backend data procurement and processing. |
+| `dist/` | Production-ready distribution files (generated via `npm run build`). |
+| `docker/` | Configuration for containerized deployment environments. |
+| `.github/` | Automated CI/CD pipelines and repository actions. |
+| `.husky/` | Git hooks for enforcing pre-commit code quality standards. |
+
+---
+
 ## 🚀 Getting Started
 
 ### Prerequisites
 
-- Node.js (v18+)
-- Python 3.9+ (For the market data ingestion pipeline)
+- **Node.js** (v18+)
+- **Python 3.9+** (For the market data ingestion pipeline)
 
 ### Installation
 
 1. Clone the repository:
-  ```bash
+   ```bash
    git clone https://github.com/SIDD2310/DATA-VIZ-Assignment.git
    cd DATA-VIZ-Assignment
-  ```
+   ```
 2. Install dependencies:
-  ```bash
+   ```bash
    npm install
-  ```
+   ```
 3. Fetch the latest market datasets (Optional but recommended):
-  ```bash
+   ```bash
    python scripts/fetch_candles.py
-  ```
+   ```
 4. Start the development server:
-  ```bash
+   ```bash
    npm run dev
-  ```
+   ```
+
+---
+
+## 🖥️ Access and Usage
+
+Once the development server is running, the platform can be accessed locally at `http://localhost:5173`.
+
+### Key Interaction Patterns:
+
+1. **Temporal Scrubbing**: Use the timeline bar at the bottom of the screen to move through historical data. Observe how all telemetry layers (fires, earthquakes, market trends) synchronize to the selected timestamp.
+2. **Geospatial Navigation**: Switch between the **3D Globe** and **2D FlatMap** modes using the toggle in the sidebar. In 2D mode, the solar shadow (terminator) will update based on the temporal selection.
+3. **Market Intelligence**: Navigate to the **Markets** tab to analyze the causal relationship between physical events and financial volatility. Candlestick charts and news headlines are contextualized by the current temporal state.
+4. **Data Overlays**: Use the **Intelligence** sidebar to toggle specific data layers (Aviation, Submarine Cables, etc.) to refine your risk analysis.
 
 ### Environment Variables
 
@@ -88,14 +118,11 @@ To enable live news and aviation tracking, add the following to a `.env` file at
 VITE_GNEWS_API_KEY=your_key_here
 VITE_AVIATIONSTACK_KEY=your_key_here
 ```
-<<<<<<< HEAD
 
 *(Note: If API limits are reached, the application will automatically failover to highly realistic fallback data to ensure uninterrupted presentation).*
-=======
->>>>>>> c9a1b7b9d2a6cc901d9c89d80eb2e118dd5ba2c2
 
 ---
 
 ## 📜 License
 
-This project is proprietary and intended for demonstration of advanced data visualization architectures.
+This project is proprietary and intended for demonstration of advanced data visualization architectures.
