@@ -86,7 +86,7 @@ const Navbar = ({ onBoot }) => {
     }`}>
       <div className="font-sans font-bold text-2xl tracking-tighter flex items-center gap-3">
         <Crosshair size={24} className="text-accent animate-[spin_10s_linear_infinite]" />
-        WorldMonitor
+        GlobalSentinel
       </div>
       
       <div className="hidden md:flex items-center gap-8 font-mono text-xs uppercase tracking-widest [&>a]:hover-lift">
@@ -601,7 +601,7 @@ const BootSequence = ({ onComplete }) => {
           />
         </div>
         <div className="flex justify-between mt-3 font-mono text-[10px] text-white/30 uppercase tracking-widest">
-          <span>WorldMonitor v3.0 (Edge)</span>
+          <span>GlobalSentinel v3.0 (Edge)</span>
           <span>{Math.round(progress)}% initialized</span>
         </div>
       </div>
@@ -671,7 +671,7 @@ export default function App() {
       </main>
 
       <footer className="bg-dark text-background py-6 px-12 border-t border-white/5 flex flex-col md:flex-row justify-between items-center font-mono text-xs opacity-70">
-        <span>© {new Date().getFullYear()} WorldMonitor. Preset A Configuration.</span>
+        <span>© {new Date().getFullYear()} GlobalSentinel. Preset A Configuration.</span>
         <span>Secure Terminal Active</span>
       </footer>
     </div>
